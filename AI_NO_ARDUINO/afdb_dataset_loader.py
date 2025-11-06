@@ -121,7 +121,7 @@ def detect_mlii_channel(record_name: str, pn_dir: str) -> Optional[int]:
         header = wfdb.rdheader(record_name, pn_dir=pn_dir)
         sig_names = [s.lower() for s in getattr(header, "sig_name", [])]
         for i, name in enumerate(sig_names):
-            if "mlii" in name or "ii" in name:
+            if "mlii" in name or "ECG2" in name:
                 logging.info(
                     f"Detected MLII channel for {record_name}: index {i} ({header.sig_name[i]})"
                 )

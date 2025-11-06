@@ -12,7 +12,6 @@ The script downloads and processes ECG signals in time blocks, automatically det
 - ✅ **Automatic MLII (Lead II) channel detection** — no need to specify channel indices manually.  
 - ⚙️ **Block-based processing** — handles large PhysioNet records without consuming excessive memory.  
 - 📊 **Feature extraction** — mean, standard deviation, RMS, zero-crossing rate, and heart-rate estimate per block.  
-- 💾 **Incremental CSV output** — appends results while processing, suitable for multi-user environments.  
 - 🧩 **WFDB-based PhysioNet access** — no local downloads required.
 
 ---
@@ -22,5 +21,4 @@ The script downloads and processes ECG signals in time blocks, automatically det
 Make sure you have Python ≥ 3.8 installed. Then install the required dependencies:
 
 ```bash
-pip install wfdb numpy pandas scipy
-
+pip install wfdb numpy pandas scipy scikit-learn

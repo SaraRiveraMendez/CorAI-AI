@@ -1,33 +1,32 @@
 """
-afdb_feature_extraction.py (versión comentada)
+afdb_dataset_loader.py
 
-Script ligero y eficiente para extraer datos de la base de datos MIT-BIH Atrial Fibrillation Database (AFDB)
-directamente desde PhysioNet, con detección automática de la derivación MLII (Lead II).
+Efficient and memory-safe loader for the MIT-BIH Atrial Fibrillation Database (AFDB) from PhysioNet.
 
-Características principales:
-- Carga los registros por bloques, evitando consumir mucha memoria.
-- Detecta automáticamente qué canal corresponde a la derivación MLII.
-- Permite extraer características básicas (media, desviación, HR estimado, etc.) por bloques.
-- Escribre resultados de manera incremental en un CSV.
+This script combines:
+- Streaming feature extraction from ECG records.
+- Automatic MLII (Lead II) channel detection.
+- Basic data cleaning and normalization.
+- In-memory dataset creation (no CSV export).
 
-Requisitos:
-  pip install wfdb numpy pandas scipy
+It’s designed to integrate directly with machine learning workflows,
+so that the resulting DataFrame can be used immediately for training or inference.
 
-Uso:
-  # Procesar un solo registro (detección automática de MLII)
-  python afdb_feature_extraction.py --records 04015 --channels auto
+Usage example:
+    from afdb_dataset_loader import load_afdb_dataset
 
-  # Procesar varios registros manualmente
-  python afdb_feature_extraction.py --records 04015,04043 --channels 0
+    df = load_afdb_dataset(
+        records=["04015", "04043"],
+        pn_dir="afdb/1.0.0",
+        block_sec=60.0,
+        normalize=True
+    )
 
-  # Procesar todos los registros disponibles en PhysioNet
-  python afdb_feature_extraction.py --all-records
+    print(df.head())
 """
 
 from __future__ import annotations
-import argparse
 import logging
-import math
 import os
 from typing import List, Optional
 
@@ -35,100 +34,43 @@ import numpy as np
 import pandas as pd
 import wfdb
 from scipy.signal import butter, filtfilt, find_peaks
-
-# ------------------------------------------------------------------
-# CONFIGURACIÓN GENERAL
-# ------------------------------------------------------------------
-DEFAULT_PN_DIR = "afdb/1.0.0"  # Ruta base de PhysioNet
-
-# ------------------------------------------------------------------
-# CONFIGURACIÓN DE LOGGING
-# ------------------------------------------------------------------
+from sklearn.preprocessing import StandardScaler
 
 
+# ---------------------------------------------------------------------
+# LOGGING SETUP
+# ---------------------------------------------------------------------
 def setup_logging(level: str = "INFO") -> None:
-    """Configura el formato y nivel del registro en consola."""
+    """Configure basic console logging."""
     logging.basicConfig(
         level=getattr(logging, level.upper(), logging.INFO),
         format="%(asctime)s [%(levelname)s] %(message)s",
     )
 
 
-# ------------------------------------------------------------------
-# PARSEO DE ARGUMENTOS
-# ------------------------------------------------------------------
-
-
-def parse_args() -> argparse.Namespace:
-    """Define y lee los argumentos de línea de comandos."""
-    p = argparse.ArgumentParser(
-        description="AFDB extraction with automatic MLII channel detection."
-    )
-    p.add_argument(
-        "--records",
-        type=str,
-        default="",
-        help="Registros a procesar, separados por coma (e.g. 04015,04043).",
-    )
-    p.add_argument(
-        "--all-records",
-        action="store_true",
-        help="Procesar todos los registros disponibles en PhysioNet.",
-    )
-    p.add_argument(
-        "--pn-dir", default=DEFAULT_PN_DIR, help="Ruta del dataset en PhysioNet."
-    )
-    p.add_argument(
-        "--channels",
-        default="auto",
-        help="Índices de canales (0,1,...) o 'auto' para detectar MLII automáticamente.",
-    )
-    p.add_argument(
-        "--block-sec",
-        type=float,
-        default=60.0,
-        help="Duración de cada bloque de lectura en segundos.",
-    )
-    p.add_argument("--out", default="afdb_features.csv", help="Archivo CSV de salida.")
-    p.add_argument(
-        "--force-fs",
-        type=float,
-        default=0.0,
-        help="Frecuencia de muestreo forzada (si no se encuentra en el header).",
-    )
-    p.add_argument(
-        "--log", default="INFO", help="Nivel de logging (DEBUG/INFO/WARNING)."
-    )
-    return p.parse_args()
-
-
-# ------------------------------------------------------------------
-# FUNCIONES AUXILIARES DE SEÑAL
-# ------------------------------------------------------------------
-
-
+# ---------------------------------------------------------------------
+# SIGNAL PROCESSING UTILITIES
+# ---------------------------------------------------------------------
 def to_float32(x: np.ndarray) -> np.ndarray:
-    """Convierte el array a float32 para ahorrar memoria."""
+    """Convert array to float32 for memory efficiency."""
     return x.astype(np.float32, copy=False)
 
 
 def bandpass_signal(
     sig: np.ndarray, fs: float, low: float = 0.5, high: float = 40.0, order: int = 3
 ) -> np.ndarray:
-    """Aplica un filtro pasabanda Butterworth a la señal."""
+    """Apply a Butterworth band-pass filter to the signal."""
     nyq = 0.5 * fs
     lown, highn = low / nyq, high / nyq
     b, a = butter(order, [lown, highn], btype="band")
     return to_float32(filtfilt(b, a, sig))
 
 
-# ------------------------------------------------------------------
-# EXTRACCIÓN DE FEATURES
-# ------------------------------------------------------------------
-
-
+# ---------------------------------------------------------------------
+# FEATURE EXTRACTION FUNCTIONS
+# ---------------------------------------------------------------------
 def extract_basic_time_features(block: np.ndarray) -> dict:
-    """Calcula características estadísticas básicas del bloque de señal."""
+    """Compute simple statistical features from a block of ECG signal."""
     x = block
     return {
         "mean": float(np.mean(x)),
@@ -142,7 +84,7 @@ def extract_basic_time_features(block: np.ndarray) -> dict:
 
 
 def estimate_hr_from_peaks(block: np.ndarray, fs: float) -> tuple[float, int]:
-    """Calcula una estimación simple de la frecuencia cardíaca (bpm) a partir de los picos R."""
+    """Estimate heart rate (in bpm) based on R-peak detection."""
     if block.size < int(0.5 * fs):
         return float("nan"), 0
     try:
@@ -158,60 +100,60 @@ def estimate_hr_from_peaks(block: np.ndarray, fs: float) -> tuple[float, int]:
 
 
 def extract_features_block(block: np.ndarray, fs: float) -> dict:
-    """Combina las características básicas y la HR estimada de un bloque."""
+    """Combine basic statistics and HR estimation for a signal block."""
     feats = extract_basic_time_features(block)
     hr, n = estimate_hr_from_peaks(block, fs)
     feats.update({"hr_bpm": hr, "n_peaks": n})
     return feats
 
 
-# ------------------------------------------------------------------
-# DETECCIÓN AUTOMÁTICA DE DERIVACIÓN MLII
-# ------------------------------------------------------------------
-
-
+# ---------------------------------------------------------------------
+# AUTOMATIC MLII CHANNEL DETECTION
+# ---------------------------------------------------------------------
 def detect_mlii_channel(record_name: str, pn_dir: str) -> Optional[int]:
-    """Detecta automáticamente el índice del canal MLII (Lead II) en el registro."""
+    """
+    Automatically detect the index of the MLII (Lead II) channel from PhysioNet record metadata.
+
+    Returns:
+        Index of the MLII channel (int) or None if not found.
+    """
     try:
         header = wfdb.rdheader(record_name, pn_dir=pn_dir)
         sig_names = [s.lower() for s in getattr(header, "sig_name", [])]
         for i, name in enumerate(sig_names):
             if "mlii" in name or "ii" in name:
                 logging.info(
-                    f"Canal MLII detectado para {record_name}: índice {i} ({header.sig_name[i]})"
+                    f"Detected MLII channel for {record_name}: index {i} ({header.sig_name[i]})"
                 )
                 return i
     except Exception as e:
-        logging.warning(f"No se pudo detectar el canal MLII para {record_name}: {e}")
+        logging.warning(f"Could not detect MLII channel for {record_name}: {e}")
     return None
 
 
-# ------------------------------------------------------------------
-# PROCESAMIENTO PRINCIPAL POR BLOQUES
-# ------------------------------------------------------------------
-
-
+# ---------------------------------------------------------------------
+# STREAMING RECORD PROCESSING
+# ---------------------------------------------------------------------
 def process_record_streaming(
     record_name: str,
     pn_dir: str,
     channels: List[int],
-    block_sec: float,
-    out_csv: str,
+    block_sec: float = 60.0,
     force_fs: Optional[float] = None,
-) -> None:
-    """Procesa un registro en bloques de tiempo y guarda las características en CSV."""
-    logging.info(f"Procesando registro {record_name} (pn_dir={pn_dir})")
-
-    # Leer encabezado
+) -> pd.DataFrame:
+    """
+    Stream and process one AFDB record into feature DataFrame blocks.
+    """
     header = wfdb.rdheader(record_name, pn_dir=pn_dir)
     fs = float(force_fs) if force_fs else float(getattr(header, "fs", 250.0))
     sig_len = int(getattr(header, "sig_len", 0))
     block_samples = int(block_sec * fs)
 
-    write_header = not os.path.exists(out_csv)
     samp_start, block_idx = 0, 0
+    rows = []
 
-    # Procesamiento por bloques
+    logging.info(f"Processing record {record_name} (fs={fs}, sig_len={sig_len})")
+
     while samp_start < sig_len:
         samp_end = min(samp_start + block_samples, sig_len)
         rec = wfdb.rdrecord(
@@ -222,9 +164,7 @@ def process_record_streaming(
             channels=channels,
         )
         p_signal = to_float32(rec.p_signal)
-        rows = []
 
-        # Procesar cada canal solicitado
         for ch_idx, ch in enumerate(channels):
             sig = p_signal[:, ch_idx] if p_signal.ndim == 2 else p_signal
             feats = extract_features_block(sig, fs)
@@ -240,70 +180,89 @@ def process_record_streaming(
                     **feats,
                 }
             )
-
-        # Guardar resultados incrementales
-        pd.DataFrame(rows).to_csv(out_csv, mode="a", index=False, header=write_header)
-        write_header = False
-
         samp_start = samp_end
         block_idx += 1
-        logging.info(f"Bloque {block_idx} procesado para {record_name}")
+
+    return pd.DataFrame(rows)
 
 
-# ------------------------------------------------------------------
-# UTILIDAD PARA OBTENER LISTA DE REGISTROS REMOTOS
-# ------------------------------------------------------------------
+# ---------------------------------------------------------------------
+# DATA CLEANING AND NORMALIZATION
+# ---------------------------------------------------------------------
+def clean_and_normalize(df: pd.DataFrame, normalize: bool = True) -> pd.DataFrame:
+    """
+    Clean invalid rows (NaNs, unrealistic HR) and normalize numeric columns.
+    """
+    df = df.copy()
+    df.replace([np.inf, -np.inf], np.nan, inplace=True)
+    df.dropna(inplace=True)
+
+    # Remove unrealistic HR values
+    if "hr_bpm" in df.columns:
+        df = df[(df["hr_bpm"] > 30) & (df["hr_bpm"] < 220)]
+
+    if normalize:
+        feature_cols = [
+            "mean",
+            "std",
+            "median",
+            "min",
+            "max",
+            "rms",
+            "zcr",
+            "hr_bpm",
+            "n_peaks",
+        ]
+        feature_cols = [c for c in feature_cols if c in df.columns]
+        scaler = StandardScaler()
+        df[feature_cols] = scaler.fit_transform(df[feature_cols])
+        logging.info(f"Normalized features: {feature_cols}")
+
+    logging.info(f"Cleaned dataset shape: {df.shape}")
+    return df.reset_index(drop=True)
 
 
-def get_remote_record_list(pn_dir: str) -> List[str]:
-    """Obtiene la lista de registros disponibles desde PhysioNet."""
-    try:
-        return list(wfdb.get_record_list(pn_dir))
-    except Exception as e:
-        logging.warning(f"No se pudo obtener la lista de registros: {e}")
-        return []
+# ---------------------------------------------------------------------
+# MAIN PUBLIC FUNCTION
+# ---------------------------------------------------------------------
+def load_afdb_dataset(
+    records: List[str],
+    pn_dir: str = "afdb/1.0.0",
+    block_sec: float = 60.0,
+    normalize: bool = True,
+    log_level: str = "INFO",
+) -> pd.DataFrame:
+    """
+    Load, extract, and preprocess the AFDB dataset directly from PhysioNet.
 
+    Args:
+        records (list[str]): List of record IDs to load (e.g., ["04015", "04043"]).
+        pn_dir (str): Path or PhysioNet dataset identifier (default: "afdb/1.0.0").
+        block_sec (float): Duration (in seconds) per processing block.
+        normalize (bool): Whether to apply feature normalization.
+        log_level (str): Logging verbosity ("INFO", "DEBUG", etc.).
 
-# ------------------------------------------------------------------
-# FUNCIÓN PRINCIPAL
-# ------------------------------------------------------------------
+    Returns:
+        pd.DataFrame: Cleaned and ready-to-use feature dataset.
+    """
+    setup_logging(log_level)
+    all_dfs = []
 
+    if not records:
+        raise ValueError("No record IDs specified.")
 
-def main() -> None:
-    args = parse_args()
-    setup_logging(args.log)
+    for rec in records:
+        ch = detect_mlii_channel(rec, pn_dir)
+        if ch is None:
+            logging.warning(f"Skipping {rec}: MLII not found.")
+            continue
+        df_rec = process_record_streaming(rec, pn_dir, [ch], block_sec)
+        all_dfs.append(df_rec)
 
-    # Determinar qué registros procesar
-    if args.all_records:
-        recs = get_remote_record_list(args.pn_dir)
-    else:
-        recs = [r.strip() for r in args.records.split(",") if r.strip()]
+    if not all_dfs:
+        raise RuntimeError("No valid records were processed.")
 
-    if not recs:
-        logging.error("No se especificaron registros para procesar.")
-        return
-
-    # Procesar cada registro individualmente
-    for rec in recs:
-        # Detección automática del canal MLII si está habilitada
-        if args.channels == "auto":
-            ch = detect_mlii_channel(rec, args.pn_dir)
-            if ch is None:
-                logging.warning(f"No se encontró canal MLII para {rec}, se omite.")
-                continue
-            channels = [ch]
-        else:
-            channels = [int(c) for c in args.channels.split(",") if c.strip()]
-
-        process_record_streaming(
-            rec,
-            pn_dir=args.pn_dir,
-            channels=channels,
-            block_sec=args.block_sec,
-            out_csv=args.out,
-            force_fs=args.force_fs,
-        )
-
-
-if __name__ == "__main__":
-    main()
+    df_all = pd.concat(all_dfs, ignore_index=True)
+    df_clean = clean_and_normalize(df_all, normalize=normalize)
+    logging.info("Dataset successfully loaded and preprocessed.")
+    return df_clean

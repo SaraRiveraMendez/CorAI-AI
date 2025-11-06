@@ -112,22 +112,23 @@ def extract_features_block(block: np.ndarray, fs: float) -> dict:
 # ---------------------------------------------------------------------
 def detect_mlii_channel(record_name: str, pn_dir: str) -> Optional[int]:
     """
-    Automatically detect the index of the MLII (Lead II) channel from PhysioNet record metadata.
-
-    Returns:
-        Index of the MLII channel (int) or None if not found.
+    Automatically detect the index of the MLII (Lead II) channel or similar ECG leads.
     """
     try:
         header = wfdb.rdheader(record_name, pn_dir=pn_dir)
         sig_names = [s.lower() for s in getattr(header, "sig_name", [])]
+        candidates = ["mlii", "ii", "ecg1", "ecg2", "lead2", "leadii"]
+
         for i, name in enumerate(sig_names):
-            if "mlii" in name or "ECG2" in name:
+            if any(c in name for c in candidates):
                 logging.info(
-                    f"Detected MLII channel for {record_name}: index {i} ({header.sig_name[i]})"
+                    f"Detected ECG channel for {record_name}: index {i} ({header.sig_name[i]})"
                 )
                 return i
+
+        logging.warning(f"No matching ECG channel found in {record_name}: {sig_names}")
     except Exception as e:
-        logging.warning(f"Could not detect MLII channel for {record_name}: {e}")
+        logging.warning(f"Could not detect ECG channel for {record_name}: {e}")
     return None
 
 

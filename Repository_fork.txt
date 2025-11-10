@@ -1,6 +1,6 @@
 # 1. Clonar tu fork
 git clone https://github.com/CorAI-Vulcanus/CorAI-AI
-cd proyecto-cool
+cd nombre-de-tu-proyecto
 
 # 2. Agregar remoto del original
 git remote add upstream https://github.com/CorAI-Vulcanus/CorAI-AI

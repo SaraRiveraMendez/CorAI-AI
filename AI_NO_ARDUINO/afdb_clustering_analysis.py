@@ -37,30 +37,7 @@ from sklearn.metrics import (
 )
 from sklearn.decomposition import PCA
 
-from afdb_dataset_loader import load_afdb_dataset
-
-
-import os
-import logging
-import joblib
-import pandas as pd
-import seaborn as sns
-import matplotlib.pyplot as plt
-
-from sklearn.cluster import KMeans, DBSCAN
-from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import (
-    accuracy_score,
-    f1_score,
-    classification_report,
-    confusion_matrix,
-    silhouette_score,
-)
-from sklearn.decomposition import PCA
-
-from afdb_dataset_loader import load_afdb_dataset
+from afdb_dataset_loader import extract_all_features
 
 
 def perform_clustering(df, n_clusters=3, method="kmeans", eps=0.5, min_samples=10):
@@ -163,7 +140,7 @@ def train_clustered_model(
 
     # --- Load and preprocess data ---
     logging.info("Loading and preprocessing AFDB dataset...")
-    df = load_afdb_dataset(records=records, pn_dir=pn_dir)
+    df = extract_all_features(records=records, pn_dir=pn_dir)
     logging.info(f"Dataset shape: {df.shape}")
 
     # --- Clustering step ---
@@ -175,7 +152,12 @@ def train_clustered_model(
     df_clustered = df_clustered[df_clustered["cluster"] != -1]
     logging.info(f"Filtered dataset shape (excluding noise): {df_clustered.shape}")
 
-    drop_cols = [c for c in ["record", "timestamp", "label", "lead"] if c in df.columns]
+    drop_cols = [
+        c
+        for c in ["record", "timestamp", "label", "lead", "channel", "cluster"]
+        if c in df_clustered.columns
+    ]
+
     X = df_clustered.drop(columns=drop_cols)
 
     y = df_clustered["cluster"]
@@ -241,7 +223,7 @@ def train_clustered_model(
     plt.tight_layout()
     plt.savefig(os.path.join(results_dir, "confusion_matrix.png"), dpi=300)
     plt.close()
-    logging.info("📈 Saved confusion matrix as confusion_matrix.png")
+    logging.info("Saved confusion matrix as confusion_matrix.png")
 
     # --- Feature Importance ---
     feature_importances = pd.Series(model.feature_importances_, index=X.columns)

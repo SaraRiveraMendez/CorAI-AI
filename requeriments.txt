@@ -1,0 +1,31 @@
+# 1. Clonar tu fork
+git clone https://github.com/CorAI-Vulcanus/CorAI-AI
+cd nombre-de-tu-proyecto
+
+# 2. Agregar remoto del original
+git remote add upstream https://github.com/CorAI-Vulcanus/CorAI-AI
+
+# 3. Descargar cambios del original
+git fetch upstream
+
+# 4. Fusionar cambios del original con tu main
+git checkout main -> O en la branch que se esté trabajando
+git merge upstream/main
+
+# 5. Subir cambios a tu fork
+git push origin main -> O en la branch que se esté trabajando
+
+# Librerías
+numpy
+scipy
+pywt
+pandas
+scikit-learn
+matplotlib
+seaborn
+wfdb
+tqdm
+joblib
+
+pip install numpy scipy PyWavelets pandas scikit-learn matplotlib seaborn wfdb tqdm joblib
+

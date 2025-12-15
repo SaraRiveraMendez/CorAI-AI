@@ -11,46 +11,14 @@ Dependencies:
     numpy, scipy, pywt, wfdb, pandas
 """
 
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 import numpy as np
 from scipy.signal import butter, filtfilt, find_peaks
 import pywt
 import pandas as pd
 import os
 import wfdb
-
-
-# ======================================================================
-#  AUTO-DOWNLOAD AND DIRECTORY CHECK
-# ======================================================================
-
-
-def ensure_afdb_downloaded(pn_dir: str):
-    """
-    Ensures the AFDB database is available locally.
-    If pn_dir == "auto": use wfdb’s built-in PhysioNet downloader.
-    If a custom folder is provided and it’s empty → download full AFDB there.
-
-    Returns the resolved directory ("afdb" or a local folder).
-    """
-
-    # Mode 1 — auto → use WFDB’s own DB downloader
-    if pn_dir.lower() == "auto":
-        print("[INFO] Using automatic PhysioNet downloader: ~/.wfdb/afdb/")
-        return "afdb"
-
-    # Mode 2 — local directory
-    if not os.path.exists(pn_dir):
-        print(f"[INFO] Creating directory: {pn_dir}")
-        os.makedirs(pn_dir)
-
-    # If directory empty → download full AFDB
-    if len(os.listdir(pn_dir)) == 0:
-        print(f"[INFO] Directory '{pn_dir}' is empty. Downloading AFDB dataset...")
-        wfdb.dl_database("afdb", dl_dir=pn_dir)
-        print("[INFO] AFDB download complete.")
-
-    return pn_dir
+import logging
 
 
 # ======================================================================
@@ -58,7 +26,31 @@ def ensure_afdb_downloaded(pn_dir: str):
 # ======================================================================
 
 
-def extract_features_for_records(records, pn_dir, block_sec=60):
+def detect_mlii_channel(record_name: str, pn_dir: str = None) -> Optional[int]:
+    """
+    Automatically detect the index of the MLII (Lead II) channel or similar ECG leads.
+    """
+    try:
+        header = wfdb.rdheader(record_name, pn_dir=pn_dir)
+        sig_names = [s.lower() for s in getattr(header, "sig_name", [])]
+        candidates = ["mlii", "ii", "ecg1", "ecg2", "lead2", "leadii"]
+
+        for i, name in enumerate(sig_names):
+            if any(c in name for c in candidates):
+                print(
+                    f"[INFO] Detected ECG channel for {record_name}: index {i} ({header.sig_name[i]})"
+                )
+                return i
+
+        print(f"[WARNING] No matching ECG channel found in {record_name}: {sig_names}")
+    except Exception as e:
+        print(f"[WARNING] Could not detect ECG channel for {record_name}: {e}")
+    return None
+
+
+def extract_features_for_records(
+    records, pn_dir="afdb", block_sec=60, use_streaming=True
+):
     """
     Load multiple AFDB records, split each signal into blocks, and extract
     advanced ECG features via extract_all_features().
@@ -66,29 +58,30 @@ def extract_features_for_records(records, pn_dir, block_sec=60):
     Parameters
     ----------
     records : list of record IDs (e.g. ["04015"])
-    pn_dir  : path to AFDB directory, or "auto"
+    pn_dir  : path to AFDB directory or database name for PhysioNet streaming (default: "afdb")
     block_sec : duration of each analysis block
+    use_streaming : if True, uses PhysioNet streaming without downloading files
 
     Returns
     -------
     df : pandas DataFrame with all blocks and features
     """
 
-    # Ensure db is downloaded or accessible
-    pn_dir = ensure_afdb_downloaded(pn_dir)
-
     features_list = []
 
     for rec in records:
-        print(f"[INFO] Loading record {rec}")
+        print(
+            f"[INFO] Loading record {rec} {'(streaming)' if use_streaming else '(local)'}"
+        )
 
         try:
-            # Auto mode — PhysioNet
-            if pn_dir == "afdb":
-                record = wfdb.rdrecord(rec, pn_dir="afdb")
-
-            # Local directory
+            # Streaming mode - lee directamente desde PhysioNet
+            if use_streaming:
+                record = wfdb.rdrecord(rec, pn_dir=pn_dir)
+            # Local mode - lee desde directorio local
             else:
+                if not os.path.exists(pn_dir):
+                    raise FileNotFoundError(f"Local directory not found: {pn_dir}")
                 rec_path = os.path.join(pn_dir, rec)
                 record = wfdb.rdrecord(rec_path)
 
@@ -103,8 +96,11 @@ def extract_features_for_records(records, pn_dir, block_sec=60):
         block_size = int(block_sec * fs)
         n_blocks = n_samples // block_size
 
-        print(f"[INFO] {rec}: {n_blocks} blocks, fs={fs}")
+        print(
+            f"[INFO] {rec}: {n_blocks} blocks, fs={fs} Hz, channels={record.sig_name}"
+        )
 
+        # Procesar cada canal
         for ch_idx, ch_name in enumerate(record.sig_name):
             signal = signals[:, ch_idx]
 
@@ -340,3 +336,18 @@ def extract_all_features(signal, fs):
     out["fs"] = float(fs)
 
     return out
+
+
+# ======================================================================
+#  EJEMPLO DE USO
+# ======================================================================
+
+if __name__ == "__main__":
+    # Modo streaming (sin descargar archivos)
+    records = ["04015", "04043"]
+
+    print("=== MODO STREAMING (sin descarga) ===")
+    df_stream = extract_features_for_records(
+        records=records, pn_dir="afdb", block_sec=60, use_streaming=True
+    )
+    print(df_stream.head())

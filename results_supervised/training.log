@@ -1,0 +1,276 @@
+2025-12-14 20:03:10,409 [INFO] ============================================================
+2025-12-14 20:03:10,411 [INFO] AFDB SUPERVISED CLASSIFICATION
+2025-12-14 20:03:10,412 [INFO] Using REAL rhythm labels from .atr annotations
+2025-12-14 20:03:10,412 [INFO] ============================================================
+2025-12-14 20:03:10,412 [INFO] Results directory: C:\Users\rsara\CORAI\CorAI-AI\results_supervised
+2025-12-14 20:03:10,412 [INFO] Processing channel: 1
+2025-12-14 20:03:10,413 [INFO] Extracting features with rhythm labels...
+2025-12-14 20:03:10,414 [INFO] Loading record 04015
+2025-12-14 20:03:11,045 [INFO] 04015: 613 blocks, fs=250
+2025-12-14 20:03:14,583 [INFO] Loading record 00735
+2025-12-14 20:03:14,599 [ERROR] Could not load record 00735: sampto must be greater than sampfrom
+2025-12-14 20:03:14,599 [INFO] Loading record 03665
+2025-12-14 20:03:14,631 [ERROR] Could not load record 03665: sampto must be greater than sampfrom
+2025-12-14 20:03:14,631 [INFO] Loading record 04043
+2025-12-14 20:03:15,220 [INFO] 04043: 613 blocks, fs=250
+2025-12-14 20:03:17,695 [INFO] Loading record 04048
+2025-12-14 20:03:18,158 [INFO] 04048: 613 blocks, fs=250
+2025-12-14 20:03:20,557 [INFO] Loading record 04126
+2025-12-14 20:03:21,078 [INFO] 04126: 613 blocks, fs=250
+2025-12-14 20:03:23,571 [INFO] Loading record 04746
+2025-12-14 20:03:24,070 [INFO] 04746: 613 blocks, fs=250
+2025-12-14 20:03:26,872 [INFO] Loading record 04908
+2025-12-14 20:03:27,463 [INFO] 04908: 613 blocks, fs=250
+2025-12-14 20:03:30,084 [INFO] Loading record 04936
+2025-12-14 20:03:30,613 [INFO] 04936: 613 blocks, fs=250
+2025-12-14 20:03:33,231 [INFO] Loading record 05091
+2025-12-14 20:03:33,991 [INFO] 05091: 613 blocks, fs=250
+2025-12-14 20:03:36,351 [INFO] Loading record 05121
+2025-12-14 20:03:36,988 [INFO] 05121: 613 blocks, fs=250
+2025-12-14 20:03:41,773 [INFO] Loading record 05261
+2025-12-14 20:03:43,360 [INFO] 05261: 613 blocks, fs=250
+2025-12-14 20:03:49,202 [INFO] Loading record 06426
+2025-12-14 20:03:50,102 [INFO] 06426: 613 blocks, fs=250
+2025-12-14 20:03:57,051 [INFO] Loading record 06453
+2025-12-14 20:03:57,978 [INFO] 06453: 555 blocks, fs=250
+2025-12-14 20:04:02,414 [INFO] Loading record 06995
+2025-12-14 20:04:03,625 [INFO] 06995: 613 blocks, fs=250
+2025-12-14 20:04:09,365 [INFO] Loading record 07162
+2025-12-14 20:04:10,413 [INFO] 07162: 613 blocks, fs=250
+2025-12-14 20:04:14,091 [INFO] Loading record 07859
+2025-12-14 20:04:15,028 [INFO] 07859: 613 blocks, fs=250
+2025-12-14 20:04:18,858 [INFO] Loading record 07879
+2025-12-14 20:04:19,453 [INFO] 07879: 613 blocks, fs=250
+2025-12-14 20:04:23,127 [INFO] 
+Total labeled blocks: 9750
+2025-12-14 20:04:23,142 [INFO] Label distribution:
+rhythm_label
+N       5792
+AFIB    3881
+AFL       66
+J         11
+Name: count, dtype: int64
+2025-12-14 20:04:23,197 [INFO] Features shape: (9750, 39)
+2025-12-14 20:04:23,197 [INFO] Classes: ['AFIB' 'AFL' 'J' 'N']
+2025-12-14 20:04:23,233 [INFO] Training RandomForest classifier...
+2025-12-14 20:04:31,766 [INFO] 
+Test Accuracy: 0.9672
+2025-12-14 20:04:31,767 [INFO] Train Accuracy: 0.9954
+2025-12-14 20:04:31,767 [INFO] 
+              precision    recall  f1-score   support
+
+        AFIB     0.9551    0.9639    0.9595       970
+         AFL     0.7895    0.8824    0.8333        17
+           J     0.0000    0.0000    0.0000         3
+           N     0.9778    0.9724    0.9751      1448
+
+    accuracy                         0.9672      2438
+   macro avg     0.6806    0.7047    0.6920      2438
+weighted avg     0.9662    0.9672    0.9667      2438
+
+2025-12-14 20:04:38,487 [INFO] Confusion matrix saved
+2025-12-14 20:04:40,181 [INFO] Feature importance saved
+2025-12-14 20:04:43,132 [INFO] PCA visualization saved
+2025-12-14 20:04:46,573 [INFO] Class distribution saved
+2025-12-14 20:04:46,646 [INFO] Metrics saved -> results_supervised\metrics_20251214_200446.json
+2025-12-14 20:04:46,662 [INFO] Report saved -> results_supervised\report_20251214_200446.txt
+2025-12-14 20:04:46,709 [INFO] ============================================================
+2025-12-14 20:04:46,712 [INFO] Training completed successfully!
+2025-12-14 20:04:46,717 [INFO] Results: C:\Users\rsara\CORAI\CorAI-AI\results_supervised
+2025-12-14 20:04:46,733 [INFO] ============================================================
+2025-12-15 20:52:59,444 [INFO] ============================================================
+2025-12-15 20:52:59,444 [INFO] AFDB SUPERVISED CLASSIFICATION
+2025-12-15 20:52:59,444 [INFO] Using REAL rhythm labels from .atr annotations
+2025-12-15 20:52:59,444 [INFO] ============================================================
+2025-12-15 20:52:59,444 [INFO] Python: 3.12.8 (tags/v3.12.8:2dc476b, Dec  3 2024, 19:30:04) [MSC v.1942 64 bit (AMD64)]
+2025-12-15 20:52:59,444 [INFO] Working directory: C:\Users\rsara\CORAI\CorAI-AI
+2025-12-15 20:52:59,444 [INFO] Results directory: C:\Users\rsara\CORAI\CorAI-AI\results_supervised
+2025-12-15 20:52:59,444 [INFO] Directory writable: True
+2025-12-15 20:52:59,450 [INFO] Results directory: C:\Users\rsara\CORAI\CorAI-AI\results_supervised
+2025-12-15 20:52:59,450 [INFO] Processing channel: 1
+2025-12-15 20:52:59,492 [INFO] Extracting features with rhythm labels...
+2025-12-15 20:52:59,492 [INFO] Loading record 04015
+2025-12-15 20:53:00,570 [INFO] GET https://physionet.org/content/afdb/1.0.0/: 200 0-None/None
+2025-12-15 20:53:00,708 [INFO] GET https://physionet.org/files/afdb/1.0.0/04015.hea: 200 0-110/110
+2025-12-15 20:53:00,900 [INFO] GET https://physionet.org/files/afdb/1.0.0/04015.dat: 206 0-27617280/27617280
+2025-12-15 20:54:46,134 [INFO] GET https://physionet.org/content/afdb/1.0.0/: 200 0-None/None
+2025-12-15 20:54:46,246 [INFO] GET https://physionet.org/files/afdb/1.0.0/04015.atr: 200 0-198/198
+2025-12-15 20:54:46,363 [INFO] GET https://physionet.org/files/afdb/1.0.0/04015.hea: 200 0-110/110
+2025-12-15 20:54:46,374 [INFO] 04015: 613 blocks, fs=250
+2025-12-15 20:54:48,660 [INFO] Loading record 00735
+2025-12-15 20:54:48,998 [INFO] GET https://physionet.org/content/afdb/1.0.0/: 200 0-None/None
+2025-12-15 20:54:49,105 [INFO] GET https://physionet.org/files/afdb/1.0.0/00735.hea: 200 0-15/15
+2025-12-15 20:54:49,106 [ERROR] Could not load record 00735: sampto must be greater than sampfrom
+2025-12-15 20:54:49,106 [INFO] Loading record 03665
+2025-12-15 20:54:49,445 [INFO] GET https://physionet.org/content/afdb/1.0.0/: 200 0-None/None
+2025-12-15 20:54:49,567 [INFO] GET https://physionet.org/files/afdb/1.0.0/03665.hea: 200 0-15/15
+2025-12-15 20:54:49,571 [ERROR] Could not load record 03665: sampto must be greater than sampfrom
+2025-12-15 20:54:49,573 [INFO] Loading record 04043
+2025-12-15 20:54:49,925 [INFO] GET https://physionet.org/content/afdb/1.0.0/: 200 0-None/None
+2025-12-15 20:54:50,038 [INFO] GET https://physionet.org/files/afdb/1.0.0/04043.hea: 200 0-108/108
+2025-12-15 20:54:50,228 [INFO] GET https://physionet.org/files/afdb/1.0.0/04043.dat: 206 0-27617280/27617280
+2025-12-15 20:56:49,109 [INFO] GET https://physionet.org/content/afdb/1.0.0/: 200 0-None/None
+2025-12-15 20:56:49,223 [INFO] GET https://physionet.org/files/afdb/1.0.0/04043.atr: 200 0-2318/2318
+2025-12-15 20:56:49,342 [INFO] GET https://physionet.org/files/afdb/1.0.0/04043.hea: 200 0-108/108
+2025-12-15 20:56:49,345 [INFO] 04043: 613 blocks, fs=250
+2025-12-15 20:56:53,116 [INFO] Loading record 04048
+2025-12-15 20:56:53,596 [INFO] GET https://physionet.org/content/afdb/1.0.0/: 200 0-None/None
+2025-12-15 20:56:53,722 [INFO] GET https://physionet.org/files/afdb/1.0.0/04048.hea: 200 0-109/109
+2025-12-15 20:56:53,873 [INFO] GET https://physionet.org/files/afdb/1.0.0/04048.dat: 206 0-27617280/27617280
+2025-12-15 20:58:58,669 [INFO] GET https://physionet.org/content/afdb/1.0.0/: 200 0-None/None
+2025-12-15 20:58:58,778 [INFO] GET https://physionet.org/files/afdb/1.0.0/04048.atr: 200 0-204/204
+2025-12-15 20:58:58,887 [INFO] GET https://physionet.org/files/afdb/1.0.0/04048.hea: 200 0-109/109
+2025-12-15 20:58:58,890 [INFO] 04048: 613 blocks, fs=250
+2025-12-15 20:59:01,921 [INFO] Loading record 04126
+2025-12-15 20:59:02,266 [INFO] GET https://physionet.org/content/afdb/1.0.0/: 200 0-None/None
+2025-12-15 20:59:02,376 [INFO] GET https://physionet.org/files/afdb/1.0.0/04126.hea: 200 0-107/107
+2025-12-15 20:59:02,519 [INFO] GET https://physionet.org/files/afdb/1.0.0/04126.dat: 206 0-27617280/27617280
+2025-12-15 21:00:21,580 [INFO] GET https://physionet.org/content/afdb/1.0.0/: 200 0-None/None
+2025-12-15 21:00:21,690 [INFO] GET https://physionet.org/files/afdb/1.0.0/04126.atr: 200 0-204/204
+2025-12-15 21:00:21,814 [INFO] GET https://physionet.org/files/afdb/1.0.0/04126.hea: 200 0-107/107
+2025-12-15 21:00:21,814 [INFO] 04126: 613 blocks, fs=250
+2025-12-15 21:00:24,898 [INFO] Loading record 04746
+2025-12-15 21:00:25,220 [INFO] GET https://physionet.org/content/afdb/1.0.0/: 200 0-None/None
+2025-12-15 21:00:25,340 [INFO] GET https://physionet.org/files/afdb/1.0.0/04746.hea: 200 0-109/109
+2025-12-15 21:00:25,480 [INFO] GET https://physionet.org/files/afdb/1.0.0/04746.dat: 206 0-27617280/27617280
+2025-12-15 21:01:44,301 [INFO] GET https://physionet.org/content/afdb/1.0.0/: 200 0-None/None
+2025-12-15 21:01:44,425 [INFO] GET https://physionet.org/files/afdb/1.0.0/04746.atr: 200 0-148/148
+2025-12-15 21:01:44,537 [INFO] GET https://physionet.org/files/afdb/1.0.0/04746.hea: 200 0-109/109
+2025-12-15 21:01:44,540 [INFO] 04746: 613 blocks, fs=250
+2025-12-15 21:01:47,848 [INFO] Loading record 04908
+2025-12-15 21:01:48,227 [INFO] GET https://physionet.org/content/afdb/1.0.0/: 200 0-None/None
+2025-12-15 21:01:48,332 [INFO] GET https://physionet.org/files/afdb/1.0.0/04908.hea: 200 0-105/105
+2025-12-15 21:01:48,488 [INFO] GET https://physionet.org/files/afdb/1.0.0/04908.dat: 206 0-27617280/27617280
+2025-12-15 21:03:57,551 [INFO] GET https://physionet.org/content/afdb/1.0.0/: 200 0-None/None
+2025-12-15 21:03:57,664 [INFO] GET https://physionet.org/files/afdb/1.0.0/04908.atr: 200 0-234/234
+2025-12-15 21:03:57,785 [INFO] GET https://physionet.org/files/afdb/1.0.0/04908.hea: 200 0-105/105
+2025-12-15 21:03:57,788 [INFO] 04908: 613 blocks, fs=250
+2025-12-15 21:04:00,711 [INFO] Loading record 04936
+2025-12-15 21:04:01,055 [INFO] GET https://physionet.org/content/afdb/1.0.0/: 200 0-None/None
+2025-12-15 21:04:01,167 [INFO] GET https://physionet.org/files/afdb/1.0.0/04936.hea: 200 0-99/99
+2025-12-15 21:04:01,310 [INFO] GET https://physionet.org/files/afdb/1.0.0/04936.dat: 206 0-27617280/27617280
+2025-12-15 21:05:21,514 [INFO] GET https://physionet.org/content/afdb/1.0.0/: 200 0-None/None
+2025-12-15 21:05:21,630 [INFO] GET https://physionet.org/files/afdb/1.0.0/04936.atr: 200 0-1012/1012
+2025-12-15 21:05:21,747 [INFO] GET https://physionet.org/files/afdb/1.0.0/04936.hea: 200 0-99/99
+2025-12-15 21:05:21,747 [INFO] 04936: 613 blocks, fs=250
+2025-12-15 21:05:25,144 [INFO] Loading record 05091
+2025-12-15 21:05:25,483 [INFO] GET https://physionet.org/content/afdb/1.0.0/: 200 0-None/None
+2025-12-15 21:05:25,590 [INFO] GET https://physionet.org/files/afdb/1.0.0/05091.hea: 200 0-109/109
+2025-12-15 21:05:25,736 [INFO] GET https://physionet.org/files/afdb/1.0.0/05091.dat: 206 0-27617280/27617280
+2025-12-15 21:06:45,196 [INFO] GET https://physionet.org/content/afdb/1.0.0/: 200 0-None/None
+2025-12-15 21:06:45,310 [INFO] GET https://physionet.org/files/afdb/1.0.0/05091.atr: 200 0-220/220
+2025-12-15 21:06:45,413 [INFO] GET https://physionet.org/files/afdb/1.0.0/05091.hea: 200 0-109/109
+2025-12-15 21:06:45,413 [INFO] 05091: 613 blocks, fs=250
+2025-12-15 21:06:47,775 [INFO] Loading record 05121
+2025-12-15 21:06:48,141 [INFO] GET https://physionet.org/content/afdb/1.0.0/: 200 0-None/None
+2025-12-15 21:06:48,239 [INFO] GET https://physionet.org/files/afdb/1.0.0/05121.hea: 200 0-107/107
+2025-12-15 21:06:48,408 [INFO] GET https://physionet.org/files/afdb/1.0.0/05121.dat: 206 0-27617280/27617280
+2025-12-15 21:08:31,831 [INFO] GET https://physionet.org/content/afdb/1.0.0/: 200 0-None/None
+2025-12-15 21:08:31,939 [INFO] GET https://physionet.org/files/afdb/1.0.0/05121.atr: 200 0-574/574
+2025-12-15 21:08:32,046 [INFO] GET https://physionet.org/files/afdb/1.0.0/05121.hea: 200 0-107/107
+2025-12-15 21:08:32,049 [INFO] 05121: 613 blocks, fs=250
+2025-12-15 21:08:34,986 [INFO] Loading record 05261
+2025-12-15 21:08:35,343 [INFO] GET https://physionet.org/content/afdb/1.0.0/: 200 0-None/None
+2025-12-15 21:08:35,451 [INFO] GET https://physionet.org/files/afdb/1.0.0/05261.hea: 200 0-110/110
+2025-12-15 21:08:35,595 [INFO] GET https://physionet.org/files/afdb/1.0.0/05261.dat: 206 0-27617280/27617280
+2025-12-15 21:09:52,206 [INFO] GET https://physionet.org/content/afdb/1.0.0/: 200 0-None/None
+2025-12-15 21:09:52,315 [INFO] GET https://physionet.org/files/afdb/1.0.0/05261.atr: 200 0-304/304
+2025-12-15 21:09:52,423 [INFO] GET https://physionet.org/files/afdb/1.0.0/05261.hea: 200 0-110/110
+2025-12-15 21:09:52,426 [INFO] 05261: 613 blocks, fs=250
+2025-12-15 21:09:55,677 [INFO] Loading record 06426
+2025-12-15 21:09:56,041 [INFO] GET https://physionet.org/content/afdb/1.0.0/: 200 0-None/None
+2025-12-15 21:09:56,155 [INFO] GET https://physionet.org/files/afdb/1.0.0/06426.hea: 200 0-106/106
+2025-12-15 21:09:56,300 [INFO] GET https://physionet.org/files/afdb/1.0.0/06426.dat: 206 0-27617280/27617280
+2025-12-15 21:11:12,867 [INFO] GET https://physionet.org/content/afdb/1.0.0/: 200 0-None/None
+2025-12-15 21:11:12,980 [INFO] GET https://physionet.org/files/afdb/1.0.0/06426.atr: 200 0-738/738
+2025-12-15 21:11:13,113 [INFO] GET https://physionet.org/files/afdb/1.0.0/06426.hea: 200 0-106/106
+2025-12-15 21:11:13,113 [INFO] 06426: 613 blocks, fs=250
+2025-12-15 21:11:16,130 [INFO] Loading record 06453
+2025-12-15 21:11:16,482 [INFO] GET https://physionet.org/content/afdb/1.0.0/: 200 0-None/None
+2025-12-15 21:11:16,585 [INFO] GET https://physionet.org/files/afdb/1.0.0/06453.hea: 200 0-109/109
+2025-12-15 21:11:16,736 [INFO] GET https://physionet.org/files/afdb/1.0.0/06453.dat: 206 0-24975000/24975000
+2025-12-15 21:13:08,575 [INFO] GET https://physionet.org/content/afdb/1.0.0/: 200 0-None/None
+2025-12-15 21:13:08,681 [INFO] GET https://physionet.org/files/afdb/1.0.0/06453.atr: 200 0-176/176
+2025-12-15 21:13:08,795 [INFO] GET https://physionet.org/files/afdb/1.0.0/06453.hea: 200 0-109/109
+2025-12-15 21:13:08,797 [INFO] 06453: 555 blocks, fs=250
+2025-12-15 21:13:11,701 [INFO] Loading record 06995
+2025-12-15 21:13:12,040 [INFO] GET https://physionet.org/content/afdb/1.0.0/: 200 0-None/None
+2025-12-15 21:13:12,150 [INFO] GET https://physionet.org/files/afdb/1.0.0/06995.hea: 200 0-106/106
+2025-12-15 21:13:12,287 [INFO] GET https://physionet.org/files/afdb/1.0.0/06995.dat: 206 0-27617280/27617280
+2025-12-15 21:15:11,367 [INFO] GET https://physionet.org/content/afdb/1.0.0/: 200 0-None/None
+2025-12-15 21:15:11,472 [INFO] GET https://physionet.org/files/afdb/1.0.0/06995.atr: 200 0-156/156
+2025-12-15 21:15:11,614 [INFO] GET https://physionet.org/files/afdb/1.0.0/06995.hea: 200 0-106/106
+2025-12-15 21:15:11,622 [INFO] 06995: 613 blocks, fs=250
+2025-12-15 21:15:15,102 [INFO] Loading record 07162
+2025-12-15 21:15:15,432 [INFO] GET https://physionet.org/content/afdb/1.0.0/: 200 0-None/None
+2025-12-15 21:15:15,553 [INFO] GET https://physionet.org/files/afdb/1.0.0/07162.hea: 200 0-107/107
+2025-12-15 21:15:15,697 [INFO] GET https://physionet.org/files/afdb/1.0.0/07162.dat: 206 0-27617280/27617280
+2025-12-15 21:16:57,419 [INFO] GET https://physionet.org/content/afdb/1.0.0/: 200 0-None/None
+2025-12-15 21:16:57,560 [INFO] GET https://physionet.org/files/afdb/1.0.0/07162.atr: 200 0-12/12
+2025-12-15 21:16:57,693 [INFO] GET https://physionet.org/files/afdb/1.0.0/07162.hea: 200 0-107/107
+2025-12-15 21:16:57,699 [INFO] 07162: 613 blocks, fs=250
+2025-12-15 21:17:00,506 [INFO] Loading record 07859
+2025-12-15 21:17:00,929 [INFO] GET https://physionet.org/content/afdb/1.0.0/: 200 0-None/None
+2025-12-15 21:17:01,054 [INFO] GET https://physionet.org/files/afdb/1.0.0/07859.hea: 200 0-108/108
+2025-12-15 21:17:01,250 [INFO] GET https://physionet.org/files/afdb/1.0.0/07859.dat: 206 0-27617280/27617280
+2025-12-15 21:18:48,790 [INFO] GET https://physionet.org/content/afdb/1.0.0/: 200 0-None/None
+2025-12-15 21:18:48,891 [INFO] GET https://physionet.org/files/afdb/1.0.0/07859.atr: 200 0-12/12
+2025-12-15 21:18:48,995 [INFO] GET https://physionet.org/files/afdb/1.0.0/07859.hea: 200 0-108/108
+2025-12-15 21:18:48,995 [INFO] 07859: 613 blocks, fs=250
+2025-12-15 21:18:52,875 [INFO] Loading record 07879
+2025-12-15 21:18:53,211 [INFO] GET https://physionet.org/content/afdb/1.0.0/: 200 0-None/None
+2025-12-15 21:18:53,325 [INFO] GET https://physionet.org/files/afdb/1.0.0/07879.hea: 200 0-108/108
+2025-12-15 21:18:53,475 [INFO] GET https://physionet.org/files/afdb/1.0.0/07879.dat: 206 0-27617280/27617280
+2025-12-15 21:20:19,663 [INFO] GET https://physionet.org/content/afdb/1.0.0/: 200 0-None/None
+2025-12-15 21:20:19,761 [INFO] GET https://physionet.org/files/afdb/1.0.0/07879.atr: 200 0-58/58
+2025-12-15 21:20:19,882 [INFO] GET https://physionet.org/files/afdb/1.0.0/07879.hea: 200 0-108/108
+2025-12-15 21:20:19,890 [INFO] 07879: 613 blocks, fs=250
+2025-12-15 21:20:23,319 [INFO] 
+Total labeled blocks: 9750
+2025-12-15 21:20:23,327 [INFO] Label distribution:
+rhythm_label
+N       5792
+AFIB    3881
+AFL       66
+J         11
+Name: count, dtype: int64
+2025-12-15 21:20:23,355 [INFO] Features shape: (9750, 39)
+2025-12-15 21:20:23,355 [INFO] Classes: ['AFIB' 'AFL' 'J' 'N']
+2025-12-15 21:20:23,355 [INFO] Class distribution in y: [3881   66   11 5792]
+2025-12-15 21:20:23,399 [INFO] Train set: 7312 samples
+2025-12-15 21:20:23,401 [INFO] Test set: 2438 samples
+2025-12-15 21:20:23,401 [INFO] Training RandomForest classifier...
+2025-12-15 21:20:31,582 [INFO] 
+Test Accuracy: 0.9672
+2025-12-15 21:20:31,582 [INFO] Train Accuracy: 0.9954
+2025-12-15 21:20:31,582 [INFO] 
+              precision    recall  f1-score   support
+
+        AFIB     0.9551    0.9639    0.9595       970
+         AFL     0.7895    0.8824    0.8333        17
+           J     0.0000    0.0000    0.0000         3
+           N     0.9778    0.9724    0.9751      1448
+
+    accuracy                         0.9672      2438
+   macro avg     0.6806    0.7047    0.6920      2438
+weighted avg     0.9662    0.9672    0.9667      2438
+
+2025-12-15 21:20:31,598 [INFO] 
+============================================================
+2025-12-15 21:20:31,598 [INFO] GENERATING PLOTS
+2025-12-15 21:20:31,598 [INFO] ============================================================
+2025-12-15 21:20:31,598 [INFO] Creating confusion matrix...
+2025-12-15 21:20:32,081 [INFO] Creating feature importance plot...
+2025-12-15 21:20:32,395 [INFO] Creating PCA visualization...
+2025-12-15 21:20:33,105 [INFO] Creating class distribution plot...
+2025-12-15 21:20:33,287 [INFO] ============================================================
+
+2025-12-15 21:20:33,296 [INFO] 
+============================================================
+2025-12-15 21:20:33,296 [INFO] SAVING MODELS
+2025-12-15 21:20:33,296 [INFO] ============================================================
+2025-12-15 21:20:33,469 [INFO] ============================================================
+
+2025-12-15 21:20:33,471 [INFO] ============================================================
+2025-12-15 21:20:33,478 [INFO] Results saved in: C:\Users\rsara\CORAI\CorAI-AI\results_supervised
+2025-12-15 21:20:33,478 [INFO] ============================================================

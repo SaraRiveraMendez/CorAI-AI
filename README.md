@@ -183,13 +183,6 @@ encoder = joblib.load('results_supervised/afdb_label_encoder.joblib')
 - System uses balanced class weights in RandomForest
 - Metrics computed with zero_division=0 for robust reporting
 
-## Known Limitations
-
-1. **Annotation Dependencies**: Requires valid .atr annotation files from AFDB
-2. **Channel Selection**: Assumes ECG channels follow AFDB naming conventions (MLII, ECG1, ECG2)
-3. **Block Boundaries**: Rhythm changes within blocks are assigned based on majority voting
-4. **Minority Classes**: Some rhythm types may have insufficient samples for reliable prediction
-
 ## Troubleshooting
 
 ### No Files Saved

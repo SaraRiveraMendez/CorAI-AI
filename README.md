@@ -1,4 +1,4 @@
-```markdown
+
 # CorAI-AI: AFDB Supervised Rhythm Classification
 
 This repository provides a complete pipeline for supervised classification of cardiac arrhythmias using the **MIT-BIH Atrial Fibrillation Database (AFDB)** from [PhysioNet](https://physionet.org/content/afdb/1.0.0/).

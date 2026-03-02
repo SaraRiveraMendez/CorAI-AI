@@ -279,9 +279,9 @@ def train_supervised_model(
             f.write("test")
         file_size = os.path.getsize(test_file)
         os.remove(test_file)
-        logging.info(f"✓ Directory is writable (test file: {file_size} bytes)")
+        logging.info(f"Directory is writable (test file: {file_size} bytes)")
     except Exception as e:
-        logging.error(f"✗ Directory is NOT writable: {e}")
+        logging.error(f"Directory is NOT writable: {e}")
         raise RuntimeError(f"Cannot write to {results_dir}: {e}")
 
     # Extraer features CON ETIQUETAS REALES
@@ -374,7 +374,7 @@ def train_supervised_model(
     missing_classes = set(range(len(label_encoder.classes_))) - set(unique_pred)
     if missing_classes:
         logging.warning(
-            f"⚠️  Classes NOT predicted: {[label_encoder.classes_[i] for i in missing_classes]}"
+            f"Classes NOT predicted: {[label_encoder.classes_[i] for i in missing_classes]}"
         )
 
     # === VISUALIZACIONES ===

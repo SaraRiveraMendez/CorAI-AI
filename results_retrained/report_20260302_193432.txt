@@ -1,0 +1,45 @@
+============================================================
+AFDB SUPERVISED CLASSIFICATION REPORT
+============================================================
+
+Timestamp: 20260302_193432
+
+DATASET INFO:
+  - Total samples: 14047
+  - Features: 39
+  - Classes: 4
+  - Records: ['04015', '04043', '04048', '04126', '04746', '04908', '04936', '05091', '05121', '05261', '06426', '06453', '06995', '07162', '07859', '07879', '07910', '08215', '08219', '08378', '08405', '08434', '08455']
+  - Channel: 1
+
+CLASS DISTRIBUTION:
+  - AFIB: 5621 samples
+  - AFL: 102 samples
+  - J: 11 samples
+  - N: 8313 samples
+
+MODEL PERFORMANCE:
+  - Accuracy: 0.9741
+  - F1-score (weighted): 0.9737
+  - F1-score (macro): 0.7227
+  - Precision (weighted): 0.9735
+  - Recall (weighted): 0.9741
+
+DETAILED CLASSIFICATION REPORT:
+              precision    recall  f1-score   support
+
+        AFIB     0.9582    0.9794    0.9687      1405
+         AFL     0.9259    0.9615    0.9434        26
+           J     0.0000    0.0000    0.0000         3
+           N     0.9858    0.9721    0.9789      2078
+
+    accuracy                         0.9741      3512
+   macro avg     0.7175    0.7282    0.7227      3512
+weighted avg     0.9735    0.9741    0.9737      3512
+
+
+JSON SIGNAL EVALUATION BY NOISE TYPE:
+----------------------------------------
+  ALL             | Accuracy: 0.6667 | n=18
+  clean           | Accuracy: 1.0000 | n=6
+  Muscular        | Accuracy: 0.5000 | n=6
+  Respiraci�n     | Accuracy: 0.5000 | n=6

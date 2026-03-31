@@ -1,0 +1,93 @@
+{
+  "timestamp": "2026-03-30T20:27:15.826316",
+  "records": [
+    "04015",
+    "04043",
+    "04048",
+    "04126",
+    "04746",
+    "04908",
+    "04936",
+    "05091",
+    "05121",
+    "05261",
+    "06426",
+    "06453",
+    "06995",
+    "07162",
+    "07859",
+    "07879",
+    "07910",
+    "08215",
+    "08219",
+    "08378",
+    "08405",
+    "08434",
+    "08455"
+  ],
+  "channel_idx": 1,
+  "block_sec": 60.0,
+  "data_dir": "data",
+  "json_fs": 200.0,
+  "n_samples": 14073,
+  "n_features": 39,
+  "n_classes": 4,
+  "classes": [
+    "AFIB",
+    "AFL",
+    "J",
+    "N"
+  ],
+  "class_distribution": {
+    "AFIB": 5626,
+    "AFL": 111,
+    "J": 11,
+    "N": 8325
+  },
+  "train_accuracy": 0.992609437180216,
+  "classification_report": "              precision    recall  f1-score   support\n\n        AFIB     0.9602    0.9773    0.9687      1407\n         AFL     0.9286    0.9286    0.9286        28\n           J     0.0000    0.0000    0.0000         3\n           N     0.9845    0.9736    0.9790      2081\n\n    accuracy                         0.9739      3519\n   macro avg     0.7183    0.7198    0.7191      3519\nweighted avg     0.9735    0.9739    0.9736      3519\n",
+  "json_evaluation": [
+    {
+      "noise_type": "ALL",
+      "accuracy": 0.9143,
+      "n_samples": 35
+    },
+    {
+      "noise_type": "clean",
+      "accuracy": 1.0,
+      "n_samples": 16
+    },
+    {
+      "noise_type": "Muscular",
+      "accuracy": 0.6667,
+      "n_samples": 9
+    },
+    {
+      "noise_type": "Respiración",
+      "accuracy": 1.0,
+      "n_samples": 10
+    }
+  ],
+  "aug_evaluation": [
+    {
+      "noise_type": "ALL",
+      "accuracy": 1.0,
+      "n_samples": 32
+    },
+    {
+      "noise_type": "aug_Muscular",
+      "accuracy": 1.0,
+      "n_samples": 16
+    },
+    {
+      "noise_type": "aug_clean",
+      "accuracy": 1.0,
+      "n_samples": 16
+    }
+  ],
+  "accuracy": 0.9738562091503268,
+  "f1_weighted": 0.9736147025512358,
+  "f1_macro": 0.7190506980135651,
+  "precision": 0.9734690204507109,
+  "recall": 0.9738562091503268
+}

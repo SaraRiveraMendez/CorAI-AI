@@ -1,0 +1,19 @@
+================================================================
+  AFDB RHYTHM CLASSIFIER — TRAINING REPORT
+================================================================
+  Run timestamp : 20260330_202715
+  Records used  : 23 AFDB records
+  Channel       : 1
+  Block size    : 60.0 s
+  Training set  : 14073 samples | 39 features | 4 classes
+================================================================
+
+CLASS DISTRIBUTION (training set)
+----------------------------------------------------------------
+  AFIB       5626 samples  ( 40.0%)
+  AFL         111 samples  (  0.8%)
+  J            11 samples  (  0.1%)
+  N          8325 samples  ( 59.2%)
+
+INTERNAL EVALUATION (AFDB 25% test split)
+----------------------------------------------------------------

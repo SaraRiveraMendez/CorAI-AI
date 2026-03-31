@@ -244,10 +244,72 @@ def extract_features_with_labels(records, pn_dir, block_sec=60, channel_idx=1):
 # ---------------------------------------------------------------------------
 
 
+def _bandpass_prefilter(
+    signal: np.ndarray,
+    fs: float,
+    lowcut: float = 0.5,
+    highcut: float = 40.0,
+    order: int = 4,
+) -> np.ndarray:
+    """
+    Apply a Butterworth bandpass filter to a JSON ECG signal before feature
+    extraction.
+
+    This attenuates:
+      - Baseline wander below 0.5 Hz (respiratory and motion artifacts)
+      - High-frequency EMG/muscular noise above 40 Hz
+
+    The filter is applied with zero-phase (filtfilt) to avoid phase distortion.
+    If the signal is too short for the filter order, it is returned unchanged.
+
+    Parameters
+    ----------
+    signal : np.ndarray
+        1-D float array of ECG samples.
+    fs : float
+        Sampling frequency in Hz.
+    lowcut : float
+        High-pass cutoff frequency in Hz (default 0.5).
+    highcut : float
+        Low-pass cutoff frequency in Hz (default 40.0).
+    order : int
+        Butterworth filter order (default 4).
+
+    Returns
+    -------
+    np.ndarray
+        Filtered signal of the same shape and dtype as input.
+    """
+    from scipy.signal import butter, filtfilt
+
+    nyq = 0.5 * fs
+    low = lowcut / nyq
+    high = highcut / nyq
+
+    # filtfilt requires signal length > padlen = 3 * max(len(a), len(b))
+    min_len = 3 * (order * 2 + 1) * 2
+    if len(signal) < min_len:
+        logging.debug(
+            "Signal too short for bandpass filter (%d samples). Skipping.", len(signal)
+        )
+        return signal
+
+    try:
+        b, a = butter(order, [low, high], btype="band")
+        return filtfilt(b, a, signal).astype(signal.dtype)
+    except Exception as exc:
+        logging.warning("Bandpass prefilter failed: %s. Using raw signal.", exc)
+        return signal
+
+
 def load_json_signals(data_dir: str, json_fs: float) -> pd.DataFrame:
     """
-    Load all JSON ECG signals from the downloaded Google Drive folder,
-    extract features, and tag each sample with its class label and noise type.
+    Load all JSON ECG signals, apply a 0.5-40 Hz bandpass prefilter, extract
+    features, and tag each sample with its class label and noise type.
+
+    The bandpass prefilter is applied to every signal before feature extraction
+    to attenuate baseline wander (< 0.5 Hz) and high-frequency muscular noise
+    (> 40 Hz), improving feature quality for noisy signals.
 
     Directory structure expected:
       data_dir/
@@ -255,7 +317,7 @@ def load_json_signals(data_dir: str, json_fs: float) -> pd.DataFrame:
           *.json
           Muscular/             <- muscular noise signals
             *.json
-          Respiración/          <- respiratory noise signals
+          Respiracion/          <- respiratory noise signals
             *.json
 
     Parameters
@@ -325,6 +387,9 @@ def load_json_signals(data_dir: str, json_fs: float) -> pd.DataFrame:
                         continue
 
                     signal = np.array([s["v_raw"] for s in ecg_array], dtype=np.float32)
+                    # Apply bandpass prefilter (0.5-40 Hz) before feature extraction
+                    # to attenuate baseline wander and high-frequency muscular noise
+                    signal = _bandpass_prefilter(signal, json_fs)
 
                 except Exception as exc:
                     logging.error("Failed to load '%s': %s", filepath, exc)
@@ -350,69 +415,149 @@ def load_json_signals(data_dir: str, json_fs: float) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
-# Metrics report (unchanged)
+# Consolidated report writer
 # ---------------------------------------------------------------------------
 
 
 def save_metrics_report(metrics: dict, results_dir: str):
-    """Save metrics to a timestamped JSON and TXT file."""
+    """
+    Save all metrics and evaluation results to two files:
+      - metrics.json : machine-readable full metrics (timestamped, always appended)
+      - report.txt   : single human-readable narrative report (overwritten each run)
+
+    The TXT report consolidates AFDB internal evaluation, JSON original signal
+    evaluation, and augmented signal evaluation in one place.
+    """
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
+    # --- metrics.json (timestamped, keeps history across runs) ---
     json_path = os.path.join(results_dir, f"metrics_{timestamp}.json")
     try:
-        with open(json_path, "w") as f:
-            json.dump(metrics, f, indent=2)
-        logging.info(
-            "Metrics saved -> %s (%d bytes)", json_path, os.path.getsize(json_path)
-        )
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(metrics, f, indent=2, ensure_ascii=False)
+        logging.info("Metrics JSON -> %s", json_path)
     except Exception as e:
         logging.error("Failed to save metrics JSON: %s", e)
 
-    txt_path = os.path.join(results_dir, f"report_{timestamp}.txt")
-    try:
-        with open(txt_path, "w") as f:
-            f.write("=" * 60 + "\n")
-            f.write("AFDB SUPERVISED CLASSIFICATION REPORT\n")
-            f.write("=" * 60 + "\n\n")
-            f.write(f"Timestamp: {timestamp}\n\n")
-            f.write("DATASET INFO:\n")
-            f.write(f"  - Total samples: {metrics.get('n_samples', 'N/A')}\n")
-            f.write(f"  - Features: {metrics.get('n_features', 'N/A')}\n")
-            f.write(f"  - Classes: {metrics.get('n_classes', 'N/A')}\n")
-            f.write(f"  - Records: {metrics.get('records', 'N/A')}\n")
-            f.write(f"  - Channel: {metrics.get('channel_idx', 'N/A')}\n\n")
-            f.write("CLASS DISTRIBUTION:\n")
-            for label, count in metrics.get("class_distribution", {}).items():
-                f.write(f"  - {label}: {count} samples\n")
-            f.write("\n")
-            f.write("MODEL PERFORMANCE:\n")
-            f.write(f"  - Accuracy: {metrics.get('accuracy', 'N/A'):.4f}\n")
-            f.write(
-                f"  - F1-score (weighted): {metrics.get('f1_weighted', 'N/A'):.4f}\n"
-            )
-            f.write(f"  - F1-score (macro): {metrics.get('f1_macro', 'N/A'):.4f}\n")
-            f.write(
-                f"  - Precision (weighted): {metrics.get('precision', 'N/A'):.4f}\n"
-            )
-            f.write(f"  - Recall (weighted): {metrics.get('recall', 'N/A'):.4f}\n\n")
-            if "classification_report" in metrics:
-                f.write("DETAILED CLASSIFICATION REPORT:\n")
-                f.write(metrics["classification_report"])
+    # --- report.txt (single file, overwritten each run) ---
+    txt_path = os.path.join(results_dir, "report.txt")
+    sep = "=" * 64
+    sep2 = "-" * 64
 
-            # New section: per noise-type results
-            if "json_evaluation" in metrics:
-                f.write("\n\nJSON SIGNAL EVALUATION BY NOISE TYPE:\n")
-                f.write("-" * 40 + "\n")
-                for entry in metrics["json_evaluation"]:
+    def bar(label: str, value: float, width: int = 30) -> str:
+        """Render a simple ASCII progress bar for a 0-1 metric."""
+        filled = int(round(value * width))
+        return f"[{'#' * filled}{'.' * (width - filled)}] {value * 100:.1f}%"
+
+    try:
+        with open(txt_path, "w", encoding="utf-8") as f:
+
+            # Header
+            f.write(f"{sep}\n")
+            f.write("  AFDB RHYTHM CLASSIFIER — TRAINING REPORT\n")
+            f.write(f"{sep}\n")
+            f.write(f"  Run timestamp : {timestamp}\n")
+            f.write(
+                f"  Records used  : {len(metrics.get('records', []))} AFDB records\n"
+            )
+            f.write(f"  Channel       : {metrics.get('channel_idx', 'N/A')}\n")
+            f.write(f"  Block size    : {metrics.get('block_sec', 'N/A')} s\n")
+            f.write(
+                f"  Training set  : {metrics.get('n_samples', 'N/A')} samples "
+                f"| {metrics.get('n_features', 'N/A')} features "
+                f"| {metrics.get('n_classes', 'N/A')} classes\n"
+            )
+            f.write(f"{sep}\n\n")
+
+            # Class distribution
+            f.write("CLASS DISTRIBUTION (training set)\n")
+            f.write(f"{sep2}\n")
+            dist = metrics.get("class_distribution", {})
+            total = sum(dist.values()) or 1
+            for label, count in dist.items():
+                pct = count / total * 100
+                f.write(f"  {label:<8} {count:>6} samples  ({pct:5.1f}%)\n")
+            f.write("\n")
+
+            # Internal AFDB evaluation
+            f.write("INTERNAL EVALUATION (AFDB 25% test split)\n")
+            f.write(f"{sep2}\n")
+            f.write(
+                f"  Train accuracy : {metrics.get('train_accuracy', 0):.4f}  "
+                f"{bar(metrics.get('train_accuracy', 0))}\n"
+            )
+            f.write(
+                f"  Test accuracy  : {metrics.get('accuracy', 0):.4f}  "
+                f"{bar(metrics.get('accuracy', 0))}\n"
+            )
+            f.write(
+                f"  F1 weighted    : {metrics.get('f1_weighted', 0):.4f}  "
+                f"{bar(metrics.get('f1_weighted', 0))}\n"
+            )
+            f.write(
+                f"  F1 macro       : {metrics.get('f1_macro', 0):.4f}  "
+                f"{bar(metrics.get('f1_macro', 0))}\n"
+            )
+            f.write(f"  Precision (w)  : {metrics.get('precision', 0):.4f}\n")
+            f.write(f"  Recall (w)     : {metrics.get('recall', 0):.4f}\n\n")
+            if "classification_report" in metrics:
+                f.write("  Per-class breakdown:\n")
+                for line in metrics["classification_report"].splitlines():
+                    f.write(f"    {line}\n")
+            f.write("\n")
+
+            # JSON original signal evaluation
+            json_eval = metrics.get("json_evaluation", [])
+            aug_eval = metrics.get("aug_evaluation", [])
+
+            if json_eval or aug_eval:
+                f.write("NEW SIGNAL EVALUATION (field device data)\n")
+                f.write(f"{sep2}\n")
+                f.write(
+                    f"  {'Source':<22} {'Noise type':<18} {'Accuracy':>10} {'n':>6}\n"
+                )
+                f.write(f"  {'-'*22} {'-'*18} {'-'*10} {'-'*6}\n")
+
+                for entry in json_eval:
+                    acc_bar = bar(entry["accuracy"], width=20)
                     f.write(
-                        f"  {entry['noise_type']:<15} | "
-                        f"Accuracy: {entry['accuracy']:.4f} | "
-                        f"n={entry['n_samples']}\n"
+                        f"  {'Original (200 Hz)':<22} {entry['noise_type']:<18} "
+                        f"{entry['accuracy']:>10.4f} {entry['n_samples']:>6}"
+                        f"  {acc_bar}\n"
                     )
 
-        logging.info(
-            "Report saved -> %s (%d bytes)", txt_path, os.path.getsize(txt_path)
-        )
+                if json_eval and aug_eval:
+                    f.write(f"  {'':22} {'':18}\n")  # spacer row
+
+                for entry in aug_eval:
+                    label = entry["noise_type"].replace("aug_", "")
+                    acc_bar = bar(entry["accuracy"], width=20)
+                    f.write(
+                        f"  {'Augmented (250 Hz)':<22} {label:<18} "
+                        f"{entry['accuracy']:>10.4f} {entry['n_samples']:>6}"
+                        f"  {acc_bar}\n"
+                    )
+                f.write("\n")
+
+            f.write(f"{sep}\n")
+            f.write("  Output files in this directory:\n")
+            f.write("    metrics_<timestamp>.json  -> full machine-readable metrics\n")
+            f.write(
+                "    report.txt                -> this report (overwritten each run)\n"
+            )
+            f.write(
+                "    evaluation_summary.csv    -> all evaluation rows in one table\n"
+            )
+            f.write("    predictions.csv           -> per-signal predictions\n")
+            f.write(
+                "    confusion_matrix.png      -> AFDB test split confusion matrix\n"
+            )
+            f.write("    feature_importance.png    -> top 20 feature importances\n")
+            f.write("    pca_visualization.png     -> PCA of training feature space\n")
+            f.write("    class_distribution.png    -> training class distribution\n")
+            f.write(f"{sep}\n")
+
+        logging.info("Report TXT  -> %s", txt_path)
     except Exception as e:
         logging.error("Failed to save report TXT: %s", e)
 
@@ -433,17 +578,24 @@ def train_supervised_model(
     results_dir="results_supervised",
     data_dir=None,
     json_fs=200.0,
+    augmented_dir=None,
+    augmented_fs=250.0,
 ):
     """
     Supervised classification pipeline using real AFDB rhythm labels,
-    optionally extended with new JSON ECG signals for retraining.
+    optionally extended with original JSON signals and augmented signals
+    produced by afdb_augment.py.
 
-    When data_dir is provided:
-      - Training set : all AFDB blocks + clean JSON signals
-      - Evaluation   : all JSON signals broken down by noise_type
+    Training set composition:
+      - All AFDB blocks (always)
+      - Clean original JSON signals from data_dir at json_fs (if provided)
+      - Clean augmented signals from augmented_dir at augmented_fs (if provided)
+        These are already resampled to match AFDB frequency, reducing the
+        domain mismatch between training and new-device signals.
 
-    When data_dir is None:
-      - Original behaviour: train and evaluate on AFDB data only.
+    Evaluation:
+      - Original JSON signals broken down by noise_type
+      - Augmented JSON signals broken down by noise_type (labelled 'aug_*')
 
     Parameters
     ----------
@@ -460,10 +612,14 @@ def train_supervised_model(
     results_dir : str
         Output directory for all results and artifacts.
     data_dir : str or None
-        Root directory of downloaded JSON signals. If None, JSON data
-        is not used.
+        Root directory of original JSON signals at json_fs Hz.
     json_fs : float
-        Sampling frequency of the JSON signals in Hz.
+        Sampling frequency of the original JSON signals in Hz.
+    augmented_dir : str or None
+        Root directory of augmented signals from afdb_augment.py.
+        These are already resampled to augmented_fs Hz.
+    augmented_fs : float
+        Sampling frequency of augmented signals in Hz (default 250, matching AFDB).
     """
     results_dir = os.path.abspath(results_dir)
     os.makedirs(results_dir, exist_ok=True)
@@ -485,29 +641,61 @@ def train_supervised_model(
     # ------------------------------------------------------------------
     logging.info("Extracting features from AFDB records...")
     afdb_df = extract_features_with_labels(records, pn_dir, block_sec, channel_idx)
-    # Use 'rhythm_label' as the unified label column name
     afdb_df["class_label"] = afdb_df["rhythm_label"]
 
     # ------------------------------------------------------------------
-    # 2. Load JSON data (optional)
+    # 2. Load original JSON data (optional)
     # ------------------------------------------------------------------
     json_df = None
     if data_dir is not None:
-        logging.info("Loading JSON signals from '%s'...", data_dir)
+        logging.info(
+            "Loading original JSON signals from '%s' (%.0f Hz)...", data_dir, json_fs
+        )
         json_df = load_json_signals(data_dir, json_fs)
         json_df["class_label"] = json_df["rhythm_label"]
 
     # ------------------------------------------------------------------
+    # 2b. Load augmented JSON data (optional)
+    # ------------------------------------------------------------------
+    aug_df = None
+    if augmented_dir is not None:
+        logging.info(
+            "Loading augmented JSON signals from '%s' (%.0f Hz)...",
+            augmented_dir,
+            augmented_fs,
+        )
+        aug_df = load_json_signals(augmented_dir, augmented_fs)
+        aug_df["class_label"] = aug_df["rhythm_label"]
+        # Tag augmented noise types so they are reported separately
+        aug_df["noise_type"] = "aug_" + aug_df["noise_type"]
+        logging.info(
+            "Augmented signal distribution:\n%s",
+            aug_df.groupby(["class_label", "noise_type"]).size().to_string(),
+        )
+
+    # ------------------------------------------------------------------
     # 3. Build training set
     # ------------------------------------------------------------------
+    train_parts = [afdb_df]
+
     if json_df is not None:
-        # Include only clean JSON signals in training to avoid contaminating
-        # the model with noise it will later be evaluated on
         json_clean = json_df[json_df["noise_type"] == "clean"].copy()
-        logging.info("Adding %d clean JSON samples to training set.", len(json_clean))
-        train_df = pd.concat([afdb_df, json_clean], ignore_index=True)
-    else:
-        train_df = afdb_df.copy()
+        logging.info(
+            "Adding %d clean original JSON samples to training set.", len(json_clean)
+        )
+        train_parts.append(json_clean)
+
+    if aug_df is not None:
+        # aug_clean has noise_type == "aug_clean" after the prefix above
+        aug_clean = aug_df[aug_df["noise_type"] == "aug_clean"].copy()
+        logging.info(
+            "Adding %d clean augmented samples (%.0f Hz) to training set.",
+            len(aug_clean),
+            augmented_fs,
+        )
+        train_parts.append(aug_clean)
+
+    train_df = pd.concat(train_parts, ignore_index=True)
 
     # ------------------------------------------------------------------
     # 4. Prepare feature matrix
@@ -607,22 +795,6 @@ def train_supervised_model(
         y_json_enc = label_encoder.transform(json_df["class_label"].values)
         y_json_pred = clf.predict(X_json_scaled)
 
-        # Save full predictions CSV
-        pred_df = (
-            json_df[["filename", "class_label", "noise_type"]]
-            .copy()
-            .reset_index(drop=True)
-        )
-        pred_df["predicted_label"] = label_encoder.inverse_transform(y_json_pred)
-        if hasattr(clf, "predict_proba"):
-            proba = clf.predict_proba(X_json_scaled)
-            for i, cls in enumerate(label_encoder.classes_):
-                pred_df[f"prob_{cls}"] = proba[:, i]
-
-        pred_path = os.path.join(results_dir, "json_predictions.csv")
-        pred_df.to_csv(pred_path, index=False)
-        logging.info("JSON predictions saved: '%s'", pred_path)
-
         # Summary by noise type
         noise_types = ["ALL"] + ["clean"] + _NOISE_SUBFOLDERS
 
@@ -642,14 +814,6 @@ def train_supervised_model(
                 acc,
                 mask.sum(),
             )
-            logging.info(
-                "\n%s",
-                classification_report(
-                    label_encoder.inverse_transform(y_json_enc[mask]),
-                    label_encoder.inverse_transform(y_json_pred[mask]),
-                    zero_division=0,
-                ),
-            )
             json_eval_rows.append(
                 {
                     "noise_type": noise_type,
@@ -658,10 +822,48 @@ def train_supervised_model(
                 }
             )
 
-        # Save summary CSV
-        summary_path = os.path.join(results_dir, "json_evaluation_report.csv")
-        pd.DataFrame(json_eval_rows).to_csv(summary_path, index=False)
-        logging.info("JSON evaluation report saved: '%s'", summary_path)
+    # ------------------------------------------------------------------
+    # 8b. Augmented data evaluation broken down by noise_type
+    # ------------------------------------------------------------------
+    aug_eval_rows = []
+
+    if aug_df is not None:
+        logging.info("Evaluating on augmented signals by noise type...")
+
+        X_aug = aug_df[feature_cols].values.astype(np.float64)
+        nan_aug = np.isnan(X_aug)
+        X_aug[nan_aug] = np.take(col_medians, np.where(nan_aug)[1])
+
+        X_aug_scaled = scaler.transform(X_aug)
+        y_aug_enc = label_encoder.transform(aug_df["class_label"].values)
+        y_aug_pred = clf.predict(X_aug_scaled)
+
+        # Summary by noise type (aug_clean, aug_Muscular, aug_Respiracion)
+        aug_noise_types = ["ALL"] + sorted(aug_df["noise_type"].unique())
+
+        for noise_type in aug_noise_types:
+            if noise_type == "ALL":
+                mask = np.ones(len(aug_df), dtype=bool)
+            else:
+                mask = aug_df["noise_type"].values == noise_type
+
+            if not mask.any():
+                continue
+
+            acc = accuracy_score(y_aug_enc[mask], y_aug_pred[mask])
+            logging.info(
+                "AUG | noise_type='%s' | accuracy=%.4f | n=%d",
+                noise_type,
+                acc,
+                mask.sum(),
+            )
+            aug_eval_rows.append(
+                {
+                    "noise_type": noise_type,
+                    "accuracy": round(float(acc), 4),
+                    "n_samples": int(mask.sum()),
+                }
+            )
 
     # ------------------------------------------------------------------
     # 9. Visualisations (unchanged from original)
@@ -753,7 +955,107 @@ def train_supervised_model(
     logging.info("Class distribution saved: %s", cd_path)
 
     # ------------------------------------------------------------------
-    # 10. Metrics report
+    # 10. Consolidated output files
+    # ------------------------------------------------------------------
+
+    # --- Single predictions.csv with source column ---
+    all_pred_parts = []
+
+    if json_df is not None:
+        X_json = json_df[feature_cols].values.astype(np.float64)
+        nan_mask = np.isnan(X_json)
+        X_json[nan_mask] = np.take(col_medians, np.where(nan_mask)[1])
+        y_json_pred = clf.predict(scaler.transform(X_json))
+
+        pred_json = (
+            json_df[["filename", "class_label", "noise_type"]]
+            .copy()
+            .reset_index(drop=True)
+        )
+        pred_json["source"] = "original"
+        pred_json["predicted_label"] = label_encoder.inverse_transform(y_json_pred)
+        if hasattr(clf, "predict_proba"):
+            proba = clf.predict_proba(scaler.transform(X_json))
+            for i, cls in enumerate(label_encoder.classes_):
+                pred_json[f"prob_{cls}"] = proba[:, i]
+        all_pred_parts.append(pred_json)
+
+    if aug_df is not None:
+        X_aug = aug_df[feature_cols].values.astype(np.float64)
+        nan_mask = np.isnan(X_aug)
+        X_aug[nan_mask] = np.take(col_medians, np.where(nan_mask)[1])
+        y_aug_pred = clf.predict(scaler.transform(X_aug))
+
+        pred_aug = (
+            aug_df[["filename", "class_label", "noise_type"]]
+            .copy()
+            .reset_index(drop=True)
+        )
+        pred_aug["source"] = "augmented"
+        pred_aug["noise_type"] = pred_aug["noise_type"].str.replace(
+            "aug_", "", regex=False
+        )
+        pred_aug["predicted_label"] = label_encoder.inverse_transform(y_aug_pred)
+        if hasattr(clf, "predict_proba"):
+            proba = clf.predict_proba(scaler.transform(X_aug))
+            for i, cls in enumerate(label_encoder.classes_):
+                pred_aug[f"prob_{cls}"] = proba[:, i]
+        all_pred_parts.append(pred_aug)
+
+    if all_pred_parts:
+        predictions_path = os.path.join(results_dir, "predictions.csv")
+        pd.concat(all_pred_parts, ignore_index=True).to_csv(
+            predictions_path, index=False
+        )
+        logging.info("Consolidated predictions -> '%s'", predictions_path)
+
+    # --- Single evaluation_summary.csv ---
+    summary_rows = []
+
+    # AFDB internal split row
+    summary_rows.append(
+        {
+            "source": "AFDB internal",
+            "noise_type": "test_split",
+            "accuracy": round(test_metrics["accuracy"], 4),
+            "f1_weighted": round(test_metrics["f1_weighted"], 4),
+            "f1_macro": round(test_metrics["f1_macro"], 4),
+            "n_samples": int(len(y_test)),
+        }
+    )
+
+    # Original JSON rows
+    for row in json_eval_rows:
+        summary_rows.append(
+            {
+                "source": "original",
+                "noise_type": row["noise_type"],
+                "accuracy": row["accuracy"],
+                "f1_weighted": None,
+                "f1_macro": None,
+                "n_samples": row["n_samples"],
+            }
+        )
+
+    # Augmented rows (strip aug_ prefix for readability)
+    for row in aug_eval_rows:
+        summary_rows.append(
+            {
+                "source": "augmented",
+                "noise_type": row["noise_type"].replace("aug_", ""),
+                "accuracy": row["accuracy"],
+                "f1_weighted": None,
+                "f1_macro": None,
+                "n_samples": row["n_samples"],
+            }
+        )
+
+    eval_summary_path = os.path.join(results_dir, "evaluation_summary.csv")
+    pd.DataFrame(summary_rows).to_csv(eval_summary_path, index=False)
+    logging.info("Evaluation summary -> '%s'", eval_summary_path)
+
+    # ------------------------------------------------------------------
+    # 11. Metrics JSON + narrative report.txt
     # ------------------------------------------------------------------
     class_dist = {
         cls: int(np.sum(y == i)) for i, cls in enumerate(label_encoder.classes_)
@@ -774,12 +1076,13 @@ def train_supervised_model(
         "train_accuracy": float(train_acc),
         "classification_report": class_report,
         "json_evaluation": json_eval_rows,
+        "aug_evaluation": aug_eval_rows,
         **test_metrics,
     }
     save_metrics_report(final_metrics, results_dir)
 
     # ------------------------------------------------------------------
-    # 11. Save model artifacts
+    # 12. Save model artifacts
     # ------------------------------------------------------------------
     if save_model:
         logging.info("Saving model artifacts...")
@@ -788,7 +1091,6 @@ def train_supervised_model(
             "afdb_rhythm_classifier.joblib": clf,
             "afdb_scaler.joblib": scaler,
             "afdb_label_encoder.joblib": label_encoder,
-            # Extra artifacts for robust future inference
             "afdb_feature_columns.joblib": feature_cols,
             "afdb_col_medians.joblib": col_medians,
         }
@@ -879,7 +1181,7 @@ if __name__ == "__main__":
         "--data-dir",
         default=None,
         help=(
-            "Root directory of JSON signals (optional). "
+            "Root directory of original JSON signals at src_fs (optional). "
             "If provided, the model is retrained with AFDB + clean JSON signals "
             "and evaluated on all JSON signals by noise type."
         ),
@@ -888,7 +1190,27 @@ if __name__ == "__main__":
         "--json-fs",
         type=float,
         default=200.0,
-        help="Sampling frequency of the JSON signals in Hz (default: 200)",
+        help="Sampling frequency of the original JSON signals in Hz (default: 200)",
+    )
+    parser.add_argument(
+        "--augmented-dir",
+        default=None,
+        help=(
+            "Root directory of augmented JSON signals produced by afdb_augment.py "
+            "(optional). These signals are already resampled to --augmented-fs and "
+            "include synthetic Muscular and Respiracion variants. When provided, "
+            "augmented clean signals are added to the training set and augmented "
+            "noisy signals are included in the evaluation breakdown."
+        ),
+    )
+    parser.add_argument(
+        "--augmented-fs",
+        type=float,
+        default=250.0,
+        help=(
+            "Sampling frequency of the augmented JSON signals in Hz (default: 250, "
+            "matching AFDB). Must match the --dst-fs used in afdb_augment.py."
+        ),
     )
     args = parser.parse_args()
 
@@ -915,6 +1237,12 @@ if __name__ == "__main__":
         logging.info(
             "JSON retraining enabled: %s (fs=%.0f Hz)", args.data_dir, args.json_fs
         )
+    if args.augmented_dir:
+        logging.info(
+            "Augmented data enabled: %s (fs=%.0f Hz)",
+            args.augmented_dir,
+            args.augmented_fs,
+        )
     logging.info("=" * 60)
     logging.info("Python          : %s", sys.version)
     logging.info("Working dir     : %s", os.getcwd())
@@ -930,6 +1258,8 @@ if __name__ == "__main__":
             results_dir=results_dir,
             data_dir=args.data_dir,
             json_fs=args.json_fs,
+            augmented_dir=args.augmented_dir,
+            augmented_fs=args.augmented_fs,
         )
         logging.info("=" * 60)
         logging.info("TRAINING COMPLETED SUCCESSFULLY")
@@ -939,4 +1269,3 @@ if __name__ == "__main__":
     except Exception as e:
         logging.error("TRAINING FAILED: %s", e, exc_info=True)
         raise
- 

@@ -1,4 +1,5 @@
 __pycache__/
 afdb/
-results_supervised/
-C:/Users/rsara\CORAI\CorAI-AI\results_retrained
+data/
+data_augmented/
+

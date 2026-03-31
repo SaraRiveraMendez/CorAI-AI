@@ -1,0 +1,5 @@
+noise_type,accuracy,n_samples
+ALL,0.6857,35
+clean,0.6875,16
+Muscular,0.6667,9
+Respiración,0.7,10

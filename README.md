@@ -24,6 +24,8 @@ entrenado con la base de datos AFDB de PhysioNet y senales propias del dispositi
 
 El modelo distingue cuatro tipos de ritmo cardiaco:
 
+Atrial 1 = AFIB (Fibrilación Auricular) y Atrial 2 = AFL (Flutter Auricular)
+
 | Etiqueta | Nombre clinico              | Descripcion breve                                      |
 |----------|-----------------------------|--------------------------------------------------------|
 | `AFIB`   | Fibrilacion Auricular        | Ritmo irregularmente irregular, sin onda P definida    |
@@ -55,7 +57,7 @@ results_supervised/
 ### Archivos de evaluacion y reporte (solo referencia, no necesarios para inferencia)
 
 ```
-results_supervised/
+results_retrained/
 ├── report.txt                  # Reporte narrativo legible, sobreescrito en cada run
 ├── metrics_<timestamp>.json    # Metricas completas en JSON, acumuladas por run
 ├── evaluation_summary.csv      # Tabla consolidada de accuracy por fuente y tipo de ruido
@@ -89,7 +91,7 @@ import pywt
 
 # --- Carga de artefactos ---
 # Ajusta la ruta al directorio donde guardaste los .joblib
-MODEL_DIR = "results_supervised"
+MODEL_DIR = "results_retrained"
 
 classifier    = joblib.load(f"{MODEL_DIR}/afdb_rhythm_classifier.joblib")
 scaler        = joblib.load(f"{MODEL_DIR}/afdb_scaler.joblib")

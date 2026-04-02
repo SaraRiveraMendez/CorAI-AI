@@ -243,6 +243,49 @@ def extract_features_with_labels(records, pn_dir, block_sec=60, channel_idx=1):
 # NEW: JSON signal loader
 # ---------------------------------------------------------------------------
 
+# Common sampling frequency for the entire pipeline.
+# AFDB records are natively at 250 Hz (used as-is).
+# JSON device signals are resampled to this frequency before feature
+# extraction so that all time-dependent features (RR intervals, QRS width,
+# wavelet bands) are computed on the same scale.
+TARGET_FS = 250.0
+
+
+def _resample_to_target(signal: np.ndarray, src_fs: float, dst_fs: float) -> np.ndarray:
+    """
+    Resample a 1-D signal from src_fs to dst_fs using polyphase filtering.
+
+    No-op when src_fs == dst_fs. Uses scipy.signal.resample_poly which applies
+    an anti-aliasing FIR filter before decimation to avoid aliasing artifacts.
+
+    Parameters
+    ----------
+    signal : np.ndarray
+        1-D float array of ECG samples at src_fs Hz.
+    src_fs : float
+        Source sampling frequency in Hz.
+    dst_fs : float
+        Target sampling frequency in Hz.
+
+    Returns
+    -------
+    np.ndarray
+        Resampled signal at dst_fs Hz, same dtype as input.
+    """
+    from scipy.signal import resample_poly
+    from math import gcd
+
+    if src_fs == dst_fs:
+        return signal
+
+    src_int = int(round(src_fs))
+    dst_int = int(round(dst_fs))
+    common = gcd(dst_int, src_int)
+    up = dst_int // common
+    down = src_int // common
+
+    return resample_poly(signal, up, down).astype(signal.dtype)
+
 
 def _bandpass_prefilter(
     signal: np.ndarray,
@@ -387,15 +430,18 @@ def load_json_signals(data_dir: str, json_fs: float) -> pd.DataFrame:
                         continue
 
                     signal = np.array([s["v_raw"] for s in ecg_array], dtype=np.float32)
-                    # Apply bandpass prefilter (0.5-40 Hz) before feature extraction
-                    # to attenuate baseline wander and high-frequency muscular noise
-                    signal = _bandpass_prefilter(signal, json_fs)
+                    # Resample from device fs (e.g. 200 Hz) to TARGET_FS (250 Hz)
+                    # so all features are computed on the same frequency scale as AFDB
+                    signal = _resample_to_target(signal, json_fs, TARGET_FS)
+                    # Apply bandpass prefilter (0.5-40 Hz) after resampling
+                    signal = _bandpass_prefilter(signal, TARGET_FS)
 
                 except Exception as exc:
                     logging.error("Failed to load '%s': %s", filepath, exc)
                     continue
 
-                feats = extract_all_features(signal, json_fs)
+                # Extract features at TARGET_FS (consistent with AFDB training data)
+                feats = extract_all_features(signal, TARGET_FS)
                 feats["rhythm_label"] = class_label
                 feats["noise_type"] = noise_type
                 feats["filename"] = filename
@@ -456,17 +502,37 @@ def save_metrics_report(metrics: dict, results_dir: str):
             f.write(f"{sep}\n")
             f.write("  AFDB RHYTHM CLASSIFIER — TRAINING REPORT\n")
             f.write(f"{sep}\n")
-            f.write(f"  Run timestamp : {timestamp}\n")
+            f.write(f"  Run timestamp  : {timestamp}\n")
             f.write(
-                f"  Records used  : {len(metrics.get('records', []))} AFDB records\n"
+                f"  Records used   : {len(metrics.get('records', []))} AFDB records\n"
             )
-            f.write(f"  Channel       : {metrics.get('channel_idx', 'N/A')}\n")
-            f.write(f"  Block size    : {metrics.get('block_sec', 'N/A')} s\n")
+            f.write(f"  Channel        : {metrics.get('channel_idx', 'N/A')}\n")
+            f.write(f"  Block size     : {metrics.get('block_sec', 'N/A')} s\n")
             f.write(
-                f"  Training set  : {metrics.get('n_samples', 'N/A')} samples "
+                f"  Pipeline fs    : {metrics.get('target_fs', 250)} Hz "
+                f"(AFDB native; JSON device signals resampled to match)\n"
+            )
+            f.write(
+                f"  Training set   : {metrics.get('n_samples', 'N/A')} samples "
                 f"| {metrics.get('n_features', 'N/A')} features "
                 f"| {metrics.get('n_classes', 'N/A')} classes\n"
             )
+
+            # Dataset composition breakdown
+            n_afdb = metrics.get("n_afdb_samples", "N/A")
+            n_json_clean = metrics.get("n_json_clean_samples", "N/A")
+            n_aug_clean = metrics.get("n_aug_clean_samples", "N/A")
+            n_aug_total = metrics.get("n_aug_total_samples", "N/A")
+            f.write(
+                f"  Dataset split  : AFDB={n_afdb} | "
+                f"JSON clean={n_json_clean} | "
+                f"Augmented clean={n_aug_clean}\n"
+            )
+            if n_aug_total != "N/A":
+                f.write(
+                    f"  Augmented total: {n_aug_total} signals "
+                    f"(clean + Muscular + Respiracion — noisy used for eval only)\n"
+                )
             f.write(f"{sep}\n\n")
 
             # Class distribution
@@ -1068,6 +1134,7 @@ def train_supervised_model(
         "block_sec": float(block_sec),
         "data_dir": data_dir,
         "json_fs": float(json_fs),
+        "target_fs": TARGET_FS,
         "n_samples": int(len(y)),
         "n_features": int(len(feature_cols)),
         "n_classes": int(len(label_encoder.classes_)),
@@ -1077,6 +1144,11 @@ def train_supervised_model(
         "classification_report": class_report,
         "json_evaluation": json_eval_rows,
         "aug_evaluation": aug_eval_rows,
+        # Dataset composition counts
+        "n_afdb_samples": int(len(afdb_df)),
+        "n_json_clean_samples": int(len(json_clean)) if json_df is not None else 0,
+        "n_aug_clean_samples": int(len(aug_clean)) if aug_df is not None else 0,
+        "n_aug_total_samples": int(len(aug_df)) if aug_df is not None else 0,
         **test_metrics,
     }
     save_metrics_report(final_metrics, results_dir)

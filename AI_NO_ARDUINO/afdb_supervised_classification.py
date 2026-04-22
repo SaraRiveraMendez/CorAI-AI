@@ -527,12 +527,6 @@ def save_metrics_report(metrics: dict, results_dir: str):
                 f"JSON (all noise types)={n_json} | "
                 f"Augmented (all noise types)={n_aug}\n"
             )
-            if n_aug_total != "N/A":
-                f.write(
-                    f"  Augmented total: {n_aug_total} signals "
-                    f"(clean + Muscular + Respiracion — noisy used for eval only)\n"
-                )
-            f.write(f"{sep}\n\n")
 
             # Class distribution
             f.write("CLASS DISTRIBUTION (training set)\n")

@@ -1,11 +1,14 @@
 ================================================================
   AFDB RHYTHM CLASSIFIER — TRAINING REPORT
 ================================================================
-  Run timestamp : 20260330_202715
-  Records used  : 23 AFDB records
-  Channel       : 1
-  Block size    : 60.0 s
-  Training set  : 14073 samples | 39 features | 4 classes
+  Run timestamp  : 20260421_204501
+  Records used   : 23 AFDB records
+  Channel        : 1
+  Block size     : 60.0 s
+  Pipeline fs    : 250.0 Hz (AFDB native; JSON device signals resampled to match)
+  Training set   : 14073 samples | 39 features | 4 classes
+  Dataset split  : AFDB=14041 | JSON clean=16 | Augmented clean=16
+  Augmented total: 32 signals (clean + Muscular + Respiracion — noisy used for eval only)
 ================================================================
 
 CLASS DISTRIBUTION (training set)

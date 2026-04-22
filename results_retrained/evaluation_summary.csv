@@ -1,5 +1,5 @@
 source,noise_type,accuracy,f1_weighted,f1_macro,n_samples
-AFDB internal,test_split,0.9739,0.9736,0.7191,3519
+AFDB internal,test_split,0.9733,0.9731,0.7188,3519
 original,ALL,0.9143,,,35
 original,clean,1.0,,,16
 original,Muscular,0.6667,,,9

@@ -41,14 +41,18 @@ from scipy.signal import butter, filtfilt, find_peaks
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.model_selection import StratifiedShuffleSplit
-from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
+from sklearn.metrics import (
+    classification_report,
+    confusion_matrix,
+    accuracy_score,
+)
 
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
 
 # Google Drive folder ID for the new JSON test data
-GDRIVE_FOLDER_ID = "1pwdN3yN-Y79zNcEMWO09i3C9V3D5g-2q"
+GDRIVE_FOLDER_ID = "1pwdN3yN-Y79zNcEMWO09i3C9V3D5g-2q?usp=drive_link"
 
 # Local directory for downloaded JSON data
 DATA_DIR = "data"
@@ -654,10 +658,9 @@ def load_json_features(data_dir: str) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
-# Step 4: Retrain
+# Step 4: Retrain  (MODIFIED)
 # ---------------------------------------------------------------------------
 
-# Columns that are metadata, not features
 NON_FEATURE_COLS = {
     "class_label",
     "noise_type",
@@ -679,52 +682,90 @@ def get_feature_columns(df: pd.DataFrame) -> list:
 def retrain(
     afdb_df: pd.DataFrame,
     json_df: pd.DataFrame,
+    test_size: float = 0.25,
 ) -> tuple:
     """
-    Combine AFDB and JSON datasets, train a new RandomForest classifier,
-    and return the fitted artifacts.
+    Combine AFDB and JSON datasets, perform a stratified train/test split,
+    train a new RandomForest classifier, and return the fitted artifacts.
 
-    Training set : all AFDB blocks + clean JSON signals only
-                   (noisy signals are held out for evaluation only)
-    Test set     : all JSON signals (clean + noisy)
+    Training set : stratified sample from AFDB + ALL JSON signals (clean and noisy).
+    Test set     : held-out stratified sample from the same combined pool.
+
+    Previously, JSON signals were used exclusively for testing and only clean
+    JSON samples were allowed into training. This function removes that
+    restriction so that all JSON signals (regardless of noise type) participate
+    in both training and evaluation via the split.
 
     Parameters
     ----------
     afdb_df : pd.DataFrame
         Feature rows from AFDB streaming.
     json_df : pd.DataFrame
-        Feature rows from the new JSON signals.
+        Feature rows from the new JSON signals (all noise types).
+    test_size : float
+        Fraction of the combined dataset to reserve for testing (default 0.25).
 
     Returns
     -------
     tuple
-        (classifier, scaler, label_encoder, feature_columns)
+        (classifier, scaler, label_encoder, feature_columns, col_medians,
+         X_test_scaled, y_test_enc, test_meta_df)
+        The last three elements allow the caller to run a held-out evaluation
+        on AFDB-originated samples as well as JSON samples.
     """
-    # Hold out all JSON data for evaluation; train only on AFDB + clean JSON
-    json_clean = json_df[json_df["noise_type"] == "clean"].copy()
-    combined = pd.concat([afdb_df, json_clean], ignore_index=True)
+    # Combine ALL data: AFDB blocks + every JSON signal regardless of noise type.
+    # Previously only json_clean was included; now the full json_df is used.
+    combined = pd.concat([afdb_df, json_df], ignore_index=True)
 
     feature_cols = get_feature_columns(combined)
-    logger.info("Training feature count: %d", len(feature_cols))
+    logger.info("Feature count: %d", len(feature_cols))
 
-    X_train = combined[feature_cols].values.astype(np.float64)
-    y_train = combined["class_label"].values
+    X_all = combined[feature_cols].values.astype(np.float64)
+    y_all = combined["class_label"].values
 
-    # Replace NaN with column median (same strategy as training)
-    col_medians = np.nanmedian(X_train, axis=0)
-    nan_mask = np.isnan(X_train)
-    X_train[nan_mask] = np.take(col_medians, np.where(nan_mask)[1])
+    # Impute NaN with per-column median computed on the full combined set.
+    # The medians are saved and reused at inference time (same strategy as before).
+    col_medians = np.nanmedian(X_all, axis=0)
+    nan_mask = np.isnan(X_all)
+    X_all[nan_mask] = np.take(col_medians, np.where(nan_mask)[1])
 
     label_encoder = LabelEncoder()
-    y_enc = label_encoder.fit_transform(y_train)
+    y_enc = label_encoder.fit_transform(y_all)
+
+    # Stratified split so every class is represented proportionally in both sets.
+    splitter = StratifiedShuffleSplit(
+        n_splits=1, test_size=test_size, random_state=RF_RANDOM_STATE
+    )
+    train_idx, test_idx = next(splitter.split(X_all, y_enc))
+
+    X_train, X_test = X_all[train_idx], X_all[test_idx]
+    y_train_enc, y_test_enc = y_enc[train_idx], y_enc[test_idx]
+
+    # Keep metadata for the test split so evaluate() can break results down
+    # by source (afdb / json) and by noise_type.
+    test_meta_df = combined.iloc[test_idx][
+        (
+            ["class_label", "noise_type", "source", "filename", "record"]
+            if "record" in combined.columns
+            else ["class_label", "noise_type", "source", "filename"]
+        )
+    ].reset_index(drop=True)
 
     scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X_train)
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
 
     logger.info(
-        "Training on %d samples | Classes: %s",
+        "Train samples: %d | Test samples: %d | Classes: %s",
         len(X_train),
+        len(X_test),
         list(label_encoder.classes_),
+    )
+    logger.info(
+        "Train class distribution:\n%s",
+        pd.Series(label_encoder.inverse_transform(y_train_enc))
+        .value_counts()
+        .to_string(),
     )
 
     classifier = RandomForestClassifier(
@@ -733,93 +774,114 @@ def retrain(
         random_state=RF_RANDOM_STATE,
         n_jobs=-1,
     )
-    classifier.fit(X_scaled, y_enc)
-    logger.info("Training complete.")
+    classifier.fit(X_train_scaled, y_train_enc)
 
-    return classifier, scaler, label_encoder, feature_cols, col_medians
+    # Internal test accuracy on the held-out split
+    internal_acc = accuracy_score(y_test_enc, classifier.predict(X_test_scaled))
+    logger.info("Internal test accuracy (stratified split): %.4f", internal_acc)
+    logger.info(
+        "\n%s",
+        classification_report(
+            y_test_enc,
+            classifier.predict(X_test_scaled),
+            target_names=label_encoder.classes_,
+            zero_division=0,
+        ),
+    )
+
+    return (
+        classifier,
+        scaler,
+        label_encoder,
+        feature_cols,
+        col_medians,
+        X_test_scaled,
+        y_test_enc,
+        test_meta_df,
+    )
 
 
 # ---------------------------------------------------------------------------
-# Step 5: Evaluate on JSON signals
+# Step 5: Evaluate  (MODIFIED)
 # ---------------------------------------------------------------------------
 
 
 def evaluate(
-    json_df: pd.DataFrame,
+    X_test_scaled: np.ndarray,
+    y_test_enc: np.ndarray,
+    test_meta_df: pd.DataFrame,
     classifier,
-    scaler,
     label_encoder,
-    feature_cols: list,
-    col_medians: np.ndarray,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Run inference on all JSON signals and evaluate accuracy per noise condition.
+    Run inference on the held-out test split and report accuracy broken down
+    by data source (afdb / json) and by noise type.
+
+    Previously this function received the raw json_df and re-extracted features
+    internally. Now it receives the already-scaled test matrix produced by
+    retrain(), which contains both AFDB and JSON samples.
 
     Parameters
     ----------
-    json_df : pd.DataFrame
-        Feature rows from JSON signals (all noise types).
-    classifier, scaler, label_encoder : fitted sklearn objects
-    feature_cols : list of str
-        Ordered list of feature column names.
-    col_medians : np.ndarray
-        Per-column medians from training (used to impute NaN).
+    X_test_scaled : np.ndarray
+        Scaled feature matrix for the test split (output of retrain).
+    y_test_enc : np.ndarray
+        Encoded ground-truth labels for the test split.
+    test_meta_df : pd.DataFrame
+        Metadata rows aligned with X_test_scaled (source, noise_type, etc.).
+    classifier : fitted RandomForestClassifier
+    label_encoder : fitted LabelEncoder
 
     Returns
     -------
     tuple
         (predictions_df, summary_df)
     """
-    X = json_df[feature_cols].values.astype(np.float64)
+    y_pred_enc = classifier.predict(X_test_scaled)
+    y_pred_labels = label_encoder.inverse_transform(y_pred_enc)
+    y_true_labels = label_encoder.inverse_transform(y_test_enc)
 
-    # Impute NaN with training medians
-    nan_mask = np.isnan(X)
-    X[nan_mask] = np.take(col_medians, np.where(nan_mask)[1])
-
-    X_scaled = scaler.transform(X)
-    y_pred_encoded = classifier.predict(X_scaled)
-    y_pred_labels = label_encoder.inverse_transform(y_pred_encoded)
-
-    results = (
-        json_df[["filename", "class_label", "noise_type"]].copy().reset_index(drop=True)
-    )
+    results = test_meta_df.copy()
+    results["true_label"] = y_true_labels
     results["predicted_label"] = y_pred_labels
 
     # Per-class probabilities
     if hasattr(classifier, "predict_proba"):
-        proba = classifier.predict_proba(X_scaled)
+        proba = classifier.predict_proba(X_test_scaled)
         for i, cls_name in enumerate(label_encoder.classes_):
             results[f"prob_{cls_name}"] = proba[:, i]
 
-    # Evaluation summary
     summary_rows = []
 
-    def _report(subset: pd.DataFrame, group: str):
-        acc = accuracy_score(subset["class_label"], subset["predicted_label"])
-        logger.info("===== Group: '%s' | Accuracy: %.4f =====", group, acc)
+    def _report(subset: pd.DataFrame, group: str) -> None:
+        """Log metrics and append a summary row for one evaluation group."""
+        acc = accuracy_score(subset["true_label"], subset["predicted_label"])
+        logger.info(
+            "===== Group: '%s' | n=%d | Accuracy: %.4f =====", group, len(subset), acc
+        )
         logger.info(
             "\n%s",
             classification_report(
-                subset["class_label"], subset["predicted_label"], zero_division=0
+                subset["true_label"], subset["predicted_label"], zero_division=0
             ),
         )
-        logger.info(
-            "Confusion matrix:\n%s",
-            confusion_matrix(subset["class_label"], subset["predicted_label"]),
-        )
         summary_rows.append(
-            {
-                "noise_type": group,
-                "accuracy": round(acc, 4),
-                "n_samples": len(subset),
-            }
+            {"group": group, "accuracy": round(acc, 4), "n_samples": len(subset)}
         )
 
+    # Overall
     _report(results, "ALL")
-    for noise_type in ["clean"] + NOISE_SUBFOLDERS:
-        subset = results[results["noise_type"] == noise_type]
-        if not subset.empty:
-            _report(subset, noise_type)
+
+    # Break down by data source so AFDB performance is visible separately
+    for src in results["source"].unique():
+        subset_src = results[results["source"] == src]
+        _report(subset_src, f"source={src}")
+
+    # Break down by noise type (relevant for JSON samples)
+    if "noise_type" in results.columns:
+        for nt in results["noise_type"].dropna().unique():
+            subset_nt = results[results["noise_type"] == nt]
+            _report(subset_nt, f"noise={nt}")
 
     return results, pd.DataFrame(summary_rows)
 
@@ -863,6 +925,11 @@ def save_results(predictions: pd.DataFrame, summary: pd.DataFrame) -> None:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Main  (MODIFIED)
+# ---------------------------------------------------------------------------
+
+
 def main():
     # 1. Download JSON data
     download_drive_folder(GDRIVE_FOLDER_ID, DATA_DIR)
@@ -871,20 +938,28 @@ def main():
     logger.info("Loading AFDB training data from PhysioNet...")
     afdb_df = load_afdb_features(AFDB_RECORDS, AFDB_PN_DIR, BLOCK_SEC, CHANNEL_IDX)
 
-    # 3. Load and extract features from new JSON signals
+    # 3. Load and extract features from all JSON signals
     logger.info("Loading new JSON signals...")
     json_df = load_json_features(DATA_DIR)
 
-    # 4. Retrain classifier on AFDB + clean JSON signals
-    logger.info("Retraining classifier...")
-    classifier, scaler, label_encoder, feature_cols, col_medians = retrain(
-        afdb_df, json_df
-    )
+    # 4. Combined stratified split + train
+    # Both AFDB and JSON samples now participate in training and testing.
+    logger.info("Training classifier on combined AFDB + JSON dataset...")
+    (
+        classifier,
+        scaler,
+        label_encoder,
+        feature_cols,
+        col_medians,
+        X_test_scaled,
+        y_test_enc,
+        test_meta_df,
+    ) = retrain(afdb_df, json_df)
 
-    # 5. Evaluate on all JSON signals (clean + noisy)
-    logger.info("Evaluating on JSON test signals...")
+    # 5. Evaluate on the held-out split (AFDB + JSON, all noise types)
+    logger.info("Evaluating on held-out test split...")
     predictions, summary = evaluate(
-        json_df, classifier, scaler, label_encoder, feature_cols, col_medians
+        X_test_scaled, y_test_enc, test_meta_df, classifier, label_encoder
     )
 
     # 6. Save everything

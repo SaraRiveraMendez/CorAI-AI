@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-04-21T20:45:01.975236",
+  "timestamp": "2026-04-21T23:02:21.306130",
   "records": [
     "04015",
     "04043",
@@ -30,7 +30,7 @@
   "data_dir": "data",
   "json_fs": 200.0,
   "target_fs": 250.0,
-  "n_samples": 14073,
+  "n_samples": 14108,
   "n_features": 39,
   "n_classes": 4,
   "classes": [
@@ -40,17 +40,17 @@
     "N"
   ],
   "class_distribution": {
-    "AFIB": 5626,
-    "AFL": 111,
+    "AFIB": 5637,
+    "AFL": 122,
     "J": 11,
-    "N": 8325
+    "N": 8338
   },
-  "train_accuracy": 0.992609437180216,
-  "classification_report": "              precision    recall  f1-score   support\n\n        AFIB     0.9589    0.9773    0.9680      1407\n         AFL     0.9286    0.9286    0.9286        28\n           J     0.0000    0.0000    0.0000         3\n           N     0.9844    0.9726    0.9785      2081\n\n    accuracy                         0.9733      3519\n   macro avg     0.7180    0.7196    0.7188      3519\nweighted avg     0.9729    0.9733    0.9731      3519\n",
+  "train_accuracy": 0.9920612418485966,
+  "classification_report": "              precision    recall  f1-score   support\n\n        AFIB     0.9563    0.9787    0.9674      1409\n         AFL     0.9259    0.8333    0.8772        30\n           J     0.0000    0.0000    0.0000         3\n           N     0.9835    0.9707    0.9771      2085\n\n    accuracy                         0.9719      3527\n   macro avg     0.7164    0.6957    0.7054      3527\nweighted avg     0.9713    0.9719    0.9715      3527\n",
   "json_evaluation": [
     {
       "noise_type": "ALL",
-      "accuracy": 0.9143,
+      "accuracy": 1.0,
       "n_samples": 35
     },
     {
@@ -60,7 +60,7 @@
     },
     {
       "noise_type": "Muscular",
-      "accuracy": 0.6667,
+      "accuracy": 1.0,
       "n_samples": 9
     },
     {
@@ -87,12 +87,6 @@
     }
   ],
   "n_afdb_samples": 14041,
-  "n_json_clean_samples": 16,
-  "n_aug_clean_samples": 16,
-  "n_aug_total_samples": 32,
-  "accuracy": 0.973287865870986,
-  "f1_weighted": 0.9730501572862038,
-  "f1_macro": 0.7187568199412978,
-  "precision": 0.9729246301798018,
-  "recall": 0.973287865870986
+  "n_json_samples": 35,
+  "n_aug_samples": 32
 }

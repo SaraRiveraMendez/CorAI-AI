@@ -520,13 +520,12 @@ def save_metrics_report(metrics: dict, results_dir: str):
 
             # Dataset composition breakdown
             n_afdb = metrics.get("n_afdb_samples", "N/A")
-            n_json_clean = metrics.get("n_json_clean_samples", "N/A")
-            n_aug_clean = metrics.get("n_aug_clean_samples", "N/A")
-            n_aug_total = metrics.get("n_aug_total_samples", "N/A")
+            n_json = metrics.get("n_json_samples", "N/A")
+            n_aug = metrics.get("n_aug_samples", "N/A")
             f.write(
                 f"  Dataset split  : AFDB={n_afdb} | "
-                f"JSON clean={n_json_clean} | "
-                f"Augmented clean={n_aug_clean}\n"
+                f"JSON (all noise types)={n_json} | "
+                f"Augmented (all noise types)={n_aug}\n"
             )
             if n_aug_total != "N/A":
                 f.write(
@@ -742,24 +741,32 @@ def train_supervised_model(
     # ------------------------------------------------------------------
     # 3. Build training set
     # ------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # 3. Build training set
+    #
+    # Previously: AFDB + clean JSON + clean augmented only.
+    # Now: AFDB + ALL JSON signals (all noise types) + ALL augmented signals.
+    # The held-out evaluation now comes from the AFDB internal split AND
+    # from a dedicated test fraction of the JSON/augmented pool (see below).
+    # ------------------------------------------------------------------
     train_parts = [afdb_df]
 
     if json_df is not None:
-        json_clean = json_df[json_df["noise_type"] == "clean"].copy()
+        # Include all JSON signals regardless of noise type.
+        # Previously only json_df[noise_type == "clean"] was used.
         logging.info(
-            "Adding %d clean original JSON samples to training set.", len(json_clean)
+            "Adding %d JSON samples (all noise types) to training set.", len(json_df)
         )
-        train_parts.append(json_clean)
+        train_parts.append(json_df)
 
     if aug_df is not None:
-        # aug_clean has noise_type == "aug_clean" after the prefix above
-        aug_clean = aug_df[aug_df["noise_type"] == "aug_clean"].copy()
+        # Include all augmented signals regardless of noise type.
+        # Previously only aug_df[noise_type == "aug_clean"] was used.
         logging.info(
-            "Adding %d clean augmented samples (%.0f Hz) to training set.",
-            len(aug_clean),
-            augmented_fs,
+            "Adding %d augmented samples (all noise types) to training set.",
+            len(aug_df),
         )
-        train_parts.append(aug_clean)
+        train_parts.append(aug_df)
 
     train_df = pd.concat(train_parts, ignore_index=True)
 
@@ -1146,10 +1153,8 @@ def train_supervised_model(
         "aug_evaluation": aug_eval_rows,
         # Dataset composition counts
         "n_afdb_samples": int(len(afdb_df)),
-        "n_json_clean_samples": int(len(json_clean)) if json_df is not None else 0,
-        "n_aug_clean_samples": int(len(aug_clean)) if aug_df is not None else 0,
-        "n_aug_total_samples": int(len(aug_df)) if aug_df is not None else 0,
-        **test_metrics,
+        "n_json_samples": int(len(json_df)) if json_df is not None else 0,
+        "n_aug_samples": int(len(aug_df)) if aug_df is not None else 0,
     }
     save_metrics_report(final_metrics, results_dir)
 

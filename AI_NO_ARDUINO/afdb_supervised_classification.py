@@ -15,17 +15,12 @@ Changes from original:
   2. Added --json-fs argument for the JSON signal sampling frequency.
   3. load_json_signals() loads all JSON files, extracts features, assigns
      class labels from folder names, and tags each sample with noise_type.
-  4. JSON and augmented signals are split 80/20 stratified by class+noise_type.
-     The 80% fraction joins AFDB for training; the 20% fraction is held out
-     exclusively for device-signal evaluation. This prevents data leakage
-     while still letting the model learn from real device signals.
-  5. Evaluation is run on the held-out 20% broken down by noise_type.
-  6. col_medians and feature_columns are saved as extra .joblib artifacts
+  4. col_medians and feature_columns are saved as extra .joblib artifacts
      so that future inference scripts can impute NaN correctly.
 
 Usage example (AFDB only, original behaviour):
     python afdb_supervised_classification.py \
-        --records 04015 04043 04048 \
+        --use-all-records \
         --pn-dir afdb \
         --block-sec 60 \
         --channel-idx 1 \
@@ -481,15 +476,20 @@ def _split_device_data(
     fractions using stratified sampling.
 
     Stratification key is class_label + noise_type combined. If any stratum
-    has fewer than 2 samples (which prevents stratified splitting), the
-    fallback is to stratify by class_label alone.
+    has fewer than 2 samples, the fallback is to stratify by class_label alone.
+
+    When the dataset is too small for a percentage-based split (i.e. the
+    number of test slots would be less than the number of strata), the
+    test_size is automatically raised to n_classes so that every stratum
+    gets at least one sample in the test set.
 
     Parameters
     ----------
     df : pd.DataFrame
         Feature DataFrame with 'class_label' and 'noise_type' columns.
     test_size : float
-        Fraction of samples to reserve for evaluation (e.g. 0.20).
+        Desired fraction of samples to reserve for evaluation (e.g. 0.20).
+        May be increased automatically if the dataset is too small.
     source_name : str
         Label used in log messages to identify the data source.
 
@@ -500,8 +500,8 @@ def _split_device_data(
     """
     strat_key = df["class_label"] + "__" + df["noise_type"]
 
-    # Fall back to class_label-only stratification when any stratum is a singleton,
-    # because StratifiedShuffleSplit requires at least 2 samples per stratum.
+    # Fall back to class_label-only stratification when any stratum is a
+    # singleton, because StratifiedShuffleSplit requires >= 2 samples per stratum.
     if strat_key.value_counts().min() < 2:
         logging.warning(
             "%s: some class+noise_type strata have only 1 sample. "
@@ -510,7 +510,41 @@ def _split_device_data(
         )
         strat_key = df["class_label"]
 
-    splitter = StratifiedShuffleSplit(n_splits=1, test_size=test_size, random_state=42)
+    n_classes = strat_key.nunique()
+    n_samples = len(df)
+
+    # StratifiedShuffleSplit requires test_size >= n_classes (one per stratum).
+    # If the percentage-based count is too small, use n_classes as the
+    # absolute test size instead.
+    test_size_abs = max(int(round(test_size * n_samples)), n_classes)
+
+    # Ensure training set has at least as many samples as there are classes.
+    if n_samples - test_size_abs < n_classes:
+        # Dataset is too small to split honestly; keep only 1 sample per
+        # class in test and the rest in train.
+        test_size_abs = n_classes
+        logging.warning(
+            "%s: dataset too small for a %.0f%% split with %d classes. "
+            "Using test_size=%d (1 per class) instead.",
+            source_name,
+            test_size * 100,
+            n_classes,
+            test_size_abs,
+        )
+
+    actual_pct = test_size_abs / n_samples * 100
+    logging.info(
+        "%s: splitting %d samples -> test_size=%d (%.1f%%), train_size=%d",
+        source_name,
+        n_samples,
+        test_size_abs,
+        actual_pct,
+        n_samples - test_size_abs,
+    )
+
+    splitter = StratifiedShuffleSplit(
+        n_splits=1, test_size=test_size_abs, random_state=42
+    )
     train_idx, test_idx = next(splitter.split(df, strat_key))
 
     train_df = df.iloc[train_idx].copy()

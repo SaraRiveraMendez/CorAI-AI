@@ -1,0 +1,9 @@
+source,noise_type,accuracy,f1_weighted,f1_macro,n_samples
+AFDB+device internal,test_split,0.9408,0.9421,0.8486,473
+original_held_out,ALL,0.7778,,,9
+original_held_out,Muscular,0.6667,,,3
+original_held_out,Respiración,1.0,,,3
+original_held_out,clean,0.6667,,,3
+augmented_held_out,ALL,0.8333,,,6
+augmented_held_out,Muscular,1.0,,,3
+augmented_held_out,clean,0.6667,,,3

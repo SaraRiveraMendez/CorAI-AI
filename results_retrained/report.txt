@@ -1,0 +1,64 @@
+================================================================
+  AFDB RHYTHM CLASSIFIER - TRAINING REPORT
+================================================================
+  Run timestamp  : 20260428_223155
+  Records used   : 23 AFDB records
+  Channel        : 1
+  Block size     : 60.0 s
+  Pipeline fs    : 250.0 Hz (AFDB native; JSON device signals resampled to match)
+  Training set   : 1891 samples | 39 features | 3 classes
+  Dataset        : AFDB=1839 | JSON train=26 / held-out=9 | Augmented train=26 / held-out=6
+  Device split   : 80% training, 20% held-out evaluation (stratified by class + noise type)
+================================================================
+
+CLASS DISTRIBUTION (training set)
+----------------------------------------------------------------
+  AFIB        171 samples  (  9.0%)
+  AFL          17 samples  (  0.9%)
+  N          1703 samples  ( 90.1%)
+
+INTERNAL EVALUATION (AFDB+device 25% test split)
+----------------------------------------------------------------
+  Train accuracy : 0.9915  [##############################] 99.2%
+  Test accuracy  : 0.9408  [############################..] 94.1%
+  F1 weighted    : 0.9421  [############################..] 94.2%
+  F1 macro       : 0.8486  [#########################.....] 84.9%
+  Precision (w)  : 0.9438
+  Recall (w)     : 0.9408
+
+  Per-class breakdown:
+                  precision    recall  f1-score   support
+    
+            AFIB     0.6596    0.7209    0.6889        43
+             AFL     0.8000    1.0000    0.8889         4
+               N     0.9739    0.9624    0.9681       426
+    
+        accuracy                         0.9408       473
+       macro avg     0.8111    0.8945    0.8486       473
+    weighted avg     0.9438    0.9408    0.9421       473
+
+HELD-OUT DEVICE SIGNAL EVALUATION
+  (Signals not seen during training — honest generalisation estimate)
+----------------------------------------------------------------
+  Source                 Noise type           Accuracy      n
+  ---------------------- ------------------ ---------- ------
+  Original (200 Hz)      ALL                    0.7778      9  [################....] 77.8%
+  Original (200 Hz)      Muscular               0.6667      3  [#############.......] 66.7%
+  Original (200 Hz)      Respiración            1.0000      3  [####################] 100.0%
+  Original (200 Hz)      clean                  0.6667      3  [#############.......] 66.7%
+                                           
+  Augmented (250 Hz)     ALL                    0.8333      6  [#################...] 83.3%
+  Augmented (250 Hz)     Muscular               1.0000      3  [####################] 100.0%
+  Augmented (250 Hz)     clean                  0.6667      3  [#############.......] 66.7%
+
+================================================================
+  Output files in this directory:
+    metrics_<timestamp>.json  -> full machine-readable metrics
+    report.txt                -> this report (overwritten each run)
+    evaluation_summary.csv    -> all evaluation rows in one table
+    predictions.csv           -> per-signal predictions
+    confusion_matrix.png      -> test split confusion matrix
+    feature_importance.png    -> top 20 feature importances
+    pca_visualization.png     -> PCA of training feature space
+    class_distribution.png    -> training class distribution
+================================================================

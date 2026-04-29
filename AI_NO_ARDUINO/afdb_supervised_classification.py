@@ -15,9 +15,11 @@ Changes from original:
   2. Added --json-fs argument for the JSON signal sampling frequency.
   3. load_json_signals() loads all JSON files, extracts features, assigns
      class labels from folder names, and tags each sample with noise_type.
-  4. Training uses AFDB blocks + clean JSON signals combined.
-  5. Evaluation is run separately on all JSON signals broken down by
-     noise_type (clean, Muscular, Respiracion).
+  4. JSON and augmented signals are split 80/20 stratified by class+noise_type.
+     The 80% fraction joins AFDB for training; the 20% fraction is held out
+     exclusively for device-signal evaluation. This prevents data leakage
+     while still letting the model learn from real device signals.
+  5. Evaluation is run on the held-out 20% broken down by noise_type.
   6. col_medians and feature_columns are saved as extra .joblib artifacts
      so that future inference scripts can impute NaN correctly.
 
@@ -57,7 +59,7 @@ from datetime import datetime
 from collections import Counter
 
 from sklearn.preprocessing import StandardScaler, LabelEncoder
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, StratifiedShuffleSplit
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import (
     accuracy_score,
@@ -100,6 +102,10 @@ _METADATA_COLS = {
     "noise_type",
     "source",
 }
+
+# Fraction of JSON and augmented signals reserved for held-out evaluation.
+# The remaining (1 - _DEVICE_TEST_SIZE) fraction is added to the training set.
+_DEVICE_TEST_SIZE = 0.20
 
 
 # ---------------------------------------------------------------------------
@@ -240,7 +246,7 @@ def extract_features_with_labels(records, pn_dir, block_sec=60, channel_idx=1):
 
 
 # ---------------------------------------------------------------------------
-# NEW: JSON signal loader
+# JSON signal loader
 # ---------------------------------------------------------------------------
 
 # Common sampling frequency for the entire pipeline.
@@ -431,16 +437,16 @@ def load_json_signals(data_dir: str, json_fs: float) -> pd.DataFrame:
 
                     signal = np.array([s["v_raw"] for s in ecg_array], dtype=np.float32)
                     # Resample from device fs (e.g. 200 Hz) to TARGET_FS (250 Hz)
-                    # so all features are computed on the same frequency scale as AFDB
+                    # so all features are computed on the same frequency scale as AFDB.
                     signal = _resample_to_target(signal, json_fs, TARGET_FS)
-                    # Apply bandpass prefilter (0.5-40 Hz) after resampling
+                    # Apply bandpass prefilter (0.5-40 Hz) after resampling.
                     signal = _bandpass_prefilter(signal, TARGET_FS)
 
                 except Exception as exc:
                     logging.error("Failed to load '%s': %s", filepath, exc)
                     continue
 
-                # Extract features at TARGET_FS (consistent with AFDB training data)
+                # Extract features at TARGET_FS (consistent with AFDB training data).
                 feats = extract_all_features(signal, TARGET_FS)
                 feats["rhythm_label"] = class_label
                 feats["noise_type"] = noise_type
@@ -461,6 +467,65 @@ def load_json_signals(data_dir: str, json_fs: float) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
+# Device data splitter
+# ---------------------------------------------------------------------------
+
+
+def _split_device_data(
+    df: pd.DataFrame,
+    test_size: float,
+    source_name: str,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Split a device signal DataFrame (JSON or augmented) into train and test
+    fractions using stratified sampling.
+
+    Stratification key is class_label + noise_type combined. If any stratum
+    has fewer than 2 samples (which prevents stratified splitting), the
+    fallback is to stratify by class_label alone.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Feature DataFrame with 'class_label' and 'noise_type' columns.
+    test_size : float
+        Fraction of samples to reserve for evaluation (e.g. 0.20).
+    source_name : str
+        Label used in log messages to identify the data source.
+
+    Returns
+    -------
+    tuple of pd.DataFrame
+        (train_df, test_df)
+    """
+    strat_key = df["class_label"] + "__" + df["noise_type"]
+
+    # Fall back to class_label-only stratification when any stratum is a singleton,
+    # because StratifiedShuffleSplit requires at least 2 samples per stratum.
+    if strat_key.value_counts().min() < 2:
+        logging.warning(
+            "%s: some class+noise_type strata have only 1 sample. "
+            "Falling back to class_label-only stratification.",
+            source_name,
+        )
+        strat_key = df["class_label"]
+
+    splitter = StratifiedShuffleSplit(n_splits=1, test_size=test_size, random_state=42)
+    train_idx, test_idx = next(splitter.split(df, strat_key))
+
+    train_df = df.iloc[train_idx].copy()
+    test_df = df.iloc[test_idx].copy()
+
+    logging.info(
+        "%s split -> train: %d | held-out test: %d",
+        source_name,
+        len(train_df),
+        len(test_df),
+    )
+    return train_df, test_df
+
+
+# ---------------------------------------------------------------------------
 # Consolidated report writer
 # ---------------------------------------------------------------------------
 
@@ -468,15 +533,15 @@ def load_json_signals(data_dir: str, json_fs: float) -> pd.DataFrame:
 def save_metrics_report(metrics: dict, results_dir: str):
     """
     Save all metrics and evaluation results to two files:
-      - metrics.json : machine-readable full metrics (timestamped, always appended)
-      - report.txt   : single human-readable narrative report (overwritten each run)
+      - metrics_<timestamp>.json : machine-readable full metrics
+      - report.txt               : human-readable narrative report (overwritten each run)
 
-    The TXT report consolidates AFDB internal evaluation, JSON original signal
-    evaluation, and augmented signal evaluation in one place.
+    The TXT report consolidates AFDB internal evaluation, held-out JSON
+    evaluation, and held-out augmented evaluation in one place.
     """
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    # --- metrics.json (timestamped, keeps history across runs) ---
+    # --- metrics_<timestamp>.json (keeps history across runs) ---
     json_path = os.path.join(results_dir, f"metrics_{timestamp}.json")
     try:
         with open(json_path, "w", encoding="utf-8") as f:
@@ -500,7 +565,7 @@ def save_metrics_report(metrics: dict, results_dir: str):
 
             # Header
             f.write(f"{sep}\n")
-            f.write("  AFDB RHYTHM CLASSIFIER — TRAINING REPORT\n")
+            f.write("  AFDB RHYTHM CLASSIFIER - TRAINING REPORT\n")
             f.write(f"{sep}\n")
             f.write(f"  Run timestamp  : {timestamp}\n")
             f.write(
@@ -520,13 +585,21 @@ def save_metrics_report(metrics: dict, results_dir: str):
 
             # Dataset composition breakdown
             n_afdb = metrics.get("n_afdb_samples", "N/A")
-            n_json = metrics.get("n_json_samples", "N/A")
-            n_aug = metrics.get("n_aug_samples", "N/A")
+            n_json_train = metrics.get("n_json_train_samples", "N/A")
+            n_json_test = metrics.get("n_json_test_samples", "N/A")
+            n_aug_train = metrics.get("n_aug_train_samples", "N/A")
+            n_aug_test = metrics.get("n_aug_test_samples", "N/A")
             f.write(
-                f"  Dataset split  : AFDB={n_afdb} | "
-                f"JSON (all noise types)={n_json} | "
-                f"Augmented (all noise types)={n_aug}\n"
+                f"  Dataset        : AFDB={n_afdb} | "
+                f"JSON train={n_json_train} / held-out={n_json_test} | "
+                f"Augmented train={n_aug_train} / held-out={n_aug_test}\n"
             )
+            f.write(
+                f"  Device split   : {int((1 - _DEVICE_TEST_SIZE) * 100)}% training, "
+                f"{int(_DEVICE_TEST_SIZE * 100)}% held-out evaluation "
+                f"(stratified by class + noise type)\n"
+            )
+            f.write(f"{sep}\n\n")
 
             # Class distribution
             f.write("CLASS DISTRIBUTION (training set)\n")
@@ -539,23 +612,23 @@ def save_metrics_report(metrics: dict, results_dir: str):
             f.write("\n")
 
             # Internal AFDB evaluation
-            f.write("INTERNAL EVALUATION (AFDB 25% test split)\n")
+            f.write("INTERNAL EVALUATION (AFDB+device 25% test split)\n")
             f.write(f"{sep2}\n")
             f.write(
                 f"  Train accuracy : {metrics.get('train_accuracy', 0):.4f}  "
-                f"{bar(metrics.get('train_accuracy', 0))}\n"
+                f"{bar('', metrics.get('train_accuracy', 0))}\n"
             )
             f.write(
                 f"  Test accuracy  : {metrics.get('accuracy', 0):.4f}  "
-                f"{bar(metrics.get('accuracy', 0))}\n"
+                f"{bar('', metrics.get('accuracy', 0))}\n"
             )
             f.write(
                 f"  F1 weighted    : {metrics.get('f1_weighted', 0):.4f}  "
-                f"{bar(metrics.get('f1_weighted', 0))}\n"
+                f"{bar('', metrics.get('f1_weighted', 0))}\n"
             )
             f.write(
                 f"  F1 macro       : {metrics.get('f1_macro', 0):.4f}  "
-                f"{bar(metrics.get('f1_macro', 0))}\n"
+                f"{bar('', metrics.get('f1_macro', 0))}\n"
             )
             f.write(f"  Precision (w)  : {metrics.get('precision', 0):.4f}\n")
             f.write(f"  Recall (w)     : {metrics.get('recall', 0):.4f}\n\n")
@@ -565,12 +638,15 @@ def save_metrics_report(metrics: dict, results_dir: str):
                     f.write(f"    {line}\n")
             f.write("\n")
 
-            # JSON original signal evaluation
+            # Held-out device signal evaluation
             json_eval = metrics.get("json_evaluation", [])
             aug_eval = metrics.get("aug_evaluation", [])
 
             if json_eval or aug_eval:
-                f.write("NEW SIGNAL EVALUATION (field device data)\n")
+                f.write("HELD-OUT DEVICE SIGNAL EVALUATION\n")
+                f.write(
+                    "  (Signals not seen during training — honest generalisation estimate)\n"
+                )
                 f.write(f"{sep2}\n")
                 f.write(
                     f"  {'Source':<22} {'Noise type':<18} {'Accuracy':>10} {'n':>6}\n"
@@ -578,7 +654,7 @@ def save_metrics_report(metrics: dict, results_dir: str):
                 f.write(f"  {'-'*22} {'-'*18} {'-'*10} {'-'*6}\n")
 
                 for entry in json_eval:
-                    acc_bar = bar(entry["accuracy"], width=20)
+                    acc_bar = bar("", entry["accuracy"], width=20)
                     f.write(
                         f"  {'Original (200 Hz)':<22} {entry['noise_type']:<18} "
                         f"{entry['accuracy']:>10.4f} {entry['n_samples']:>6}"
@@ -586,11 +662,11 @@ def save_metrics_report(metrics: dict, results_dir: str):
                     )
 
                 if json_eval and aug_eval:
-                    f.write(f"  {'':22} {'':18}\n")  # spacer row
+                    f.write(f"  {'':22} {'':18}\n")
 
                 for entry in aug_eval:
                     label = entry["noise_type"].replace("aug_", "")
-                    acc_bar = bar(entry["accuracy"], width=20)
+                    acc_bar = bar("", entry["accuracy"], width=20)
                     f.write(
                         f"  {'Augmented (250 Hz)':<22} {label:<18} "
                         f"{entry['accuracy']:>10.4f} {entry['n_samples']:>6}"
@@ -608,15 +684,13 @@ def save_metrics_report(metrics: dict, results_dir: str):
                 "    evaluation_summary.csv    -> all evaluation rows in one table\n"
             )
             f.write("    predictions.csv           -> per-signal predictions\n")
-            f.write(
-                "    confusion_matrix.png      -> AFDB test split confusion matrix\n"
-            )
+            f.write("    confusion_matrix.png      -> test split confusion matrix\n")
             f.write("    feature_importance.png    -> top 20 feature importances\n")
             f.write("    pca_visualization.png     -> PCA of training feature space\n")
             f.write("    class_distribution.png    -> training class distribution\n")
             f.write(f"{sep}\n")
 
-        logging.info("Report TXT  -> %s", txt_path)
+        logging.info("Report TXT -> %s", txt_path)
     except Exception as e:
         logging.error("Failed to save report TXT: %s", e)
 
@@ -624,7 +698,7 @@ def save_metrics_report(metrics: dict, results_dir: str):
 
 
 # ---------------------------------------------------------------------------
-# Main training pipeline (extended)
+# Main training pipeline
 # ---------------------------------------------------------------------------
 
 
@@ -646,15 +720,14 @@ def train_supervised_model(
     produced by afdb_augment.py.
 
     Training set composition:
-      - All AFDB blocks (always)
-      - Clean original JSON signals from data_dir at json_fs (if provided)
-      - Clean augmented signals from augmented_dir at augmented_fs (if provided)
-        These are already resampled to match AFDB frequency, reducing the
-        domain mismatch between training and new-device signals.
+      - All AFDB blocks (always included entirely in training).
+      - 80% of JSON signals (all noise types), stratified by class+noise_type.
+      - 80% of augmented signals (all noise types), stratified by class+noise_type.
 
     Evaluation:
-      - Original JSON signals broken down by noise_type
-      - Augmented JSON signals broken down by noise_type (labelled 'aug_*')
+      - Internal: stratified 25% split of the full training pool (AFDB+device).
+      - Held-out device: the remaining 20% of JSON and augmented signals that
+        were never seen during training, broken down by noise_type.
 
     Parameters
     ----------
@@ -676,7 +749,6 @@ def train_supervised_model(
         Sampling frequency of the original JSON signals in Hz.
     augmented_dir : str or None
         Root directory of augmented signals from afdb_augment.py.
-        These are already resampled to augmented_fs Hz.
     augmented_fs : float
         Sampling frequency of augmented signals in Hz (default 250, matching AFDB).
     """
@@ -685,7 +757,7 @@ def train_supervised_model(
     logging.info("Results directory : %s", results_dir)
     logging.info("Processing channel: %d", channel_idx)
 
-    # Verify write access
+    # Verify write access before starting the long data loading phase.
     test_file = os.path.join(results_dir, "_test_write.tmp")
     try:
         with open(test_file, "w") as f:
@@ -725,7 +797,7 @@ def train_supervised_model(
         )
         aug_df = load_json_signals(augmented_dir, augmented_fs)
         aug_df["class_label"] = aug_df["rhythm_label"]
-        # Tag augmented noise types so they are reported separately
+        # Tag augmented noise types so they are reported separately from originals.
         aug_df["noise_type"] = "aug_" + aug_df["noise_type"]
         logging.info(
             "Augmented signal distribution:\n%s",
@@ -733,34 +805,32 @@ def train_supervised_model(
         )
 
     # ------------------------------------------------------------------
-    # 3. Build training set
-    # ------------------------------------------------------------------
-    # ------------------------------------------------------------------
-    # 3. Build training set
+    # 3. Build training set with honest device data split
     #
-    # Previously: AFDB + clean JSON + clean augmented only.
-    # Now: AFDB + ALL JSON signals (all noise types) + ALL augmented signals.
-    # The held-out evaluation now comes from the AFDB internal split AND
-    # from a dedicated test fraction of the JSON/augmented pool (see below).
+    # JSON and augmented signals are split 80/20 stratified by class_label
+    # and noise_type. The 80% fraction joins AFDB for training; the 20%
+    # fraction is held out exclusively for device-signal evaluation.
+    #
+    # This prevents data leakage: the model learns from real device signals
+    # but is only evaluated on signals it has never seen.
     # ------------------------------------------------------------------
     train_parts = [afdb_df]
 
+    # Held-out device test sets (populated below if data is available).
+    json_test_df = None
+    aug_test_df = None
+
     if json_df is not None:
-        # Include all JSON signals regardless of noise type.
-        # Previously only json_df[noise_type == "clean"] was used.
-        logging.info(
-            "Adding %d JSON samples (all noise types) to training set.", len(json_df)
+        json_train_df, json_test_df = _split_device_data(
+            json_df, _DEVICE_TEST_SIZE, "JSON"
         )
-        train_parts.append(json_df)
+        train_parts.append(json_train_df)
 
     if aug_df is not None:
-        # Include all augmented signals regardless of noise type.
-        # Previously only aug_df[noise_type == "aug_clean"] was used.
-        logging.info(
-            "Adding %d augmented samples (all noise types) to training set.",
-            len(aug_df),
+        aug_train_df, aug_test_df = _split_device_data(
+            aug_df, _DEVICE_TEST_SIZE, "Augmented"
         )
-        train_parts.append(aug_df)
+        train_parts.append(aug_train_df)
 
     train_df = pd.concat(train_parts, ignore_index=True)
 
@@ -777,7 +847,8 @@ def train_supervised_model(
     X = train_df[feature_cols].values.astype(np.float64)
     y_raw = train_df["class_label"].values
 
-    # Impute NaN with per-column median (computed on training data)
+    # Impute NaN with per-column median computed on training data only.
+    # The medians are saved as a .joblib artifact for use at inference time.
     col_medians = np.nanmedian(X, axis=0)
     nan_mask = np.isnan(X)
     X[nan_mask] = np.take(col_medians, np.where(nan_mask)[1])
@@ -793,7 +864,10 @@ def train_supervised_model(
     logging.info("Class distribution   : %s", np.bincount(y).tolist())
 
     # ------------------------------------------------------------------
-    # 5. Train / test split on the training set (for internal metrics)
+    # 5. Internal train/test split for classifier performance metrics
+    #
+    # This split is over the full training pool (AFDB + device train fraction)
+    # and is separate from the held-out device sets created in step 3.
     # ------------------------------------------------------------------
     X_train, X_test, y_train, y_test = train_test_split(
         X_scaled, y, test_size=0.25, random_state=42, stratify=y
@@ -816,7 +890,7 @@ def train_supervised_model(
     clf.fit(X_train, y_train)
 
     # ------------------------------------------------------------------
-    # 7. Internal evaluation (AFDB split)
+    # 7. Internal evaluation (training pool split)
     # ------------------------------------------------------------------
     y_pred = clf.predict(X_test)
     y_pred_train = clf.predict(X_train)
@@ -847,36 +921,41 @@ def train_supervised_model(
     logging.info("\n%s", class_report)
 
     # ------------------------------------------------------------------
-    # 8. JSON evaluation broken down by noise_type (new)
+    # 8. Held-out device evaluation: original JSON signals
+    #
+    # Only the 20% of JSON signals not seen during training are evaluated
+    # here, giving an honest estimate of generalisation to device signals.
     # ------------------------------------------------------------------
     json_eval_rows = []
 
-    if json_df is not None:
-        logging.info("Evaluating on JSON signals by noise type...")
+    if json_test_df is not None:
+        logging.info(
+            "Evaluating on held-out JSON signals (%d%% of JSON pool)...",
+            int(_DEVICE_TEST_SIZE * 100),
+        )
 
-        X_json = json_df[feature_cols].values.astype(np.float64)
+        X_json = json_test_df[feature_cols].values.astype(np.float64)
         nan_json = np.isnan(X_json)
         X_json[nan_json] = np.take(col_medians, np.where(nan_json)[1])
 
         X_json_scaled = scaler.transform(X_json)
-        y_json_enc = label_encoder.transform(json_df["class_label"].values)
+        y_json_enc = label_encoder.transform(json_test_df["class_label"].values)
         y_json_pred = clf.predict(X_json_scaled)
 
-        # Summary by noise type
-        noise_types = ["ALL"] + ["clean"] + _NOISE_SUBFOLDERS
+        noise_types_present = ["ALL"] + sorted(json_test_df["noise_type"].unique())
 
-        for noise_type in noise_types:
+        for noise_type in noise_types_present:
             if noise_type == "ALL":
-                mask = np.ones(len(json_df), dtype=bool)
+                mask = np.ones(len(json_test_df), dtype=bool)
             else:
-                mask = json_df["noise_type"].values == noise_type
+                mask = json_test_df["noise_type"].values == noise_type
 
             if not mask.any():
                 continue
 
             acc = accuracy_score(y_json_enc[mask], y_json_pred[mask])
             logging.info(
-                "JSON | noise_type='%s' | accuracy=%.4f | n=%d",
+                "JSON held-out | noise_type='%s' | accuracy=%.4f | n=%d",
                 noise_type,
                 acc,
                 mask.sum(),
@@ -890,36 +969,38 @@ def train_supervised_model(
             )
 
     # ------------------------------------------------------------------
-    # 8b. Augmented data evaluation broken down by noise_type
+    # 8b. Held-out device evaluation: augmented signals
     # ------------------------------------------------------------------
     aug_eval_rows = []
 
-    if aug_df is not None:
-        logging.info("Evaluating on augmented signals by noise type...")
+    if aug_test_df is not None:
+        logging.info(
+            "Evaluating on held-out augmented signals (%d%% of augmented pool)...",
+            int(_DEVICE_TEST_SIZE * 100),
+        )
 
-        X_aug = aug_df[feature_cols].values.astype(np.float64)
+        X_aug = aug_test_df[feature_cols].values.astype(np.float64)
         nan_aug = np.isnan(X_aug)
         X_aug[nan_aug] = np.take(col_medians, np.where(nan_aug)[1])
 
         X_aug_scaled = scaler.transform(X_aug)
-        y_aug_enc = label_encoder.transform(aug_df["class_label"].values)
+        y_aug_enc = label_encoder.transform(aug_test_df["class_label"].values)
         y_aug_pred = clf.predict(X_aug_scaled)
 
-        # Summary by noise type (aug_clean, aug_Muscular, aug_Respiracion)
-        aug_noise_types = ["ALL"] + sorted(aug_df["noise_type"].unique())
+        aug_noise_types_present = ["ALL"] + sorted(aug_test_df["noise_type"].unique())
 
-        for noise_type in aug_noise_types:
+        for noise_type in aug_noise_types_present:
             if noise_type == "ALL":
-                mask = np.ones(len(aug_df), dtype=bool)
+                mask = np.ones(len(aug_test_df), dtype=bool)
             else:
-                mask = aug_df["noise_type"].values == noise_type
+                mask = aug_test_df["noise_type"].values == noise_type
 
             if not mask.any():
                 continue
 
             acc = accuracy_score(y_aug_enc[mask], y_aug_pred[mask])
             logging.info(
-                "AUG | noise_type='%s' | accuracy=%.4f | n=%d",
+                "AUG held-out | noise_type='%s' | accuracy=%.4f | n=%d",
                 noise_type,
                 acc,
                 mask.sum(),
@@ -1025,21 +1106,22 @@ def train_supervised_model(
     # 10. Consolidated output files
     # ------------------------------------------------------------------
 
-    # --- Single predictions.csv with source column ---
+    # predictions.csv covers only the held-out device signals (honest evaluation).
+    # Training-fraction signals are intentionally excluded to avoid confusion.
     all_pred_parts = []
 
-    if json_df is not None:
-        X_json = json_df[feature_cols].values.astype(np.float64)
-        nan_mask = np.isnan(X_json)
-        X_json[nan_mask] = np.take(col_medians, np.where(nan_mask)[1])
+    if json_test_df is not None:
+        X_json = json_test_df[feature_cols].values.astype(np.float64)
+        nan_mask_json = np.isnan(X_json)
+        X_json[nan_mask_json] = np.take(col_medians, np.where(nan_mask_json)[1])
         y_json_pred = clf.predict(scaler.transform(X_json))
 
         pred_json = (
-            json_df[["filename", "class_label", "noise_type"]]
+            json_test_df[["filename", "class_label", "noise_type"]]
             .copy()
             .reset_index(drop=True)
         )
-        pred_json["source"] = "original"
+        pred_json["source"] = "original_held_out"
         pred_json["predicted_label"] = label_encoder.inverse_transform(y_json_pred)
         if hasattr(clf, "predict_proba"):
             proba = clf.predict_proba(scaler.transform(X_json))
@@ -1047,18 +1129,18 @@ def train_supervised_model(
                 pred_json[f"prob_{cls}"] = proba[:, i]
         all_pred_parts.append(pred_json)
 
-    if aug_df is not None:
-        X_aug = aug_df[feature_cols].values.astype(np.float64)
-        nan_mask = np.isnan(X_aug)
-        X_aug[nan_mask] = np.take(col_medians, np.where(nan_mask)[1])
+    if aug_test_df is not None:
+        X_aug = aug_test_df[feature_cols].values.astype(np.float64)
+        nan_mask_aug = np.isnan(X_aug)
+        X_aug[nan_mask_aug] = np.take(col_medians, np.where(nan_mask_aug)[1])
         y_aug_pred = clf.predict(scaler.transform(X_aug))
 
         pred_aug = (
-            aug_df[["filename", "class_label", "noise_type"]]
+            aug_test_df[["filename", "class_label", "noise_type"]]
             .copy()
             .reset_index(drop=True)
         )
-        pred_aug["source"] = "augmented"
+        pred_aug["source"] = "augmented_held_out"
         pred_aug["noise_type"] = pred_aug["noise_type"].str.replace(
             "aug_", "", regex=False
         )
@@ -1076,13 +1158,12 @@ def train_supervised_model(
         )
         logging.info("Consolidated predictions -> '%s'", predictions_path)
 
-    # --- Single evaluation_summary.csv ---
+    # evaluation_summary.csv
     summary_rows = []
 
-    # AFDB internal split row
     summary_rows.append(
         {
-            "source": "AFDB internal",
+            "source": "AFDB+device internal",
             "noise_type": "test_split",
             "accuracy": round(test_metrics["accuracy"], 4),
             "f1_weighted": round(test_metrics["f1_weighted"], 4),
@@ -1091,11 +1172,10 @@ def train_supervised_model(
         }
     )
 
-    # Original JSON rows
     for row in json_eval_rows:
         summary_rows.append(
             {
-                "source": "original",
+                "source": "original_held_out",
                 "noise_type": row["noise_type"],
                 "accuracy": row["accuracy"],
                 "f1_weighted": None,
@@ -1104,11 +1184,10 @@ def train_supervised_model(
             }
         )
 
-    # Augmented rows (strip aug_ prefix for readability)
     for row in aug_eval_rows:
         summary_rows.append(
             {
-                "source": "augmented",
+                "source": "augmented_held_out",
                 "noise_type": row["noise_type"].replace("aug_", ""),
                 "accuracy": row["accuracy"],
                 "f1_weighted": None,
@@ -1145,10 +1224,17 @@ def train_supervised_model(
         "classification_report": class_report,
         "json_evaluation": json_eval_rows,
         "aug_evaluation": aug_eval_rows,
-        # Dataset composition counts
+        # Dataset composition counts.
+        # *_train counts reflect only the 80% fraction used for training.
+        # *_test counts reflect the 20% held-out fraction used for evaluation.
         "n_afdb_samples": int(len(afdb_df)),
-        "n_json_samples": int(len(json_df)) if json_df is not None else 0,
-        "n_aug_samples": int(len(aug_df)) if aug_df is not None else 0,
+        "n_json_train_samples": int(len(json_train_df)) if json_df is not None else 0,
+        "n_json_test_samples": (
+            int(len(json_test_df)) if json_test_df is not None else 0
+        ),
+        "n_aug_train_samples": int(len(aug_train_df)) if aug_df is not None else 0,
+        "n_aug_test_samples": int(len(aug_test_df)) if aug_test_df is not None else 0,
+        **test_metrics,
     }
     save_metrics_report(final_metrics, results_dir)
 
@@ -1216,7 +1302,7 @@ if __name__ == "__main__":
         description="AFDB Supervised Classification with optional JSON retraining"
     )
 
-    # --records and --use-all-records are mutually exclusive
+    # --records and --use-all-records are mutually exclusive.
     records_group = parser.add_mutually_exclusive_group(required=True)
     records_group.add_argument(
         "--records",
@@ -1252,9 +1338,9 @@ if __name__ == "__main__":
         "--data-dir",
         default=None,
         help=(
-            "Root directory of original JSON signals at src_fs (optional). "
-            "If provided, the model is retrained with AFDB + clean JSON signals "
-            "and evaluated on all JSON signals by noise type."
+            "Root directory of original JSON signals at json_fs Hz (optional). "
+            "80%% of these signals (all noise types) are added to training; "
+            "the remaining 20%% are held out for evaluation."
         ),
     )
     parser.add_argument(
@@ -1268,10 +1354,8 @@ if __name__ == "__main__":
         default=None,
         help=(
             "Root directory of augmented JSON signals produced by afdb_augment.py "
-            "(optional). These signals are already resampled to --augmented-fs and "
-            "include synthetic Muscular and Respiracion variants. When provided, "
-            "augmented clean signals are added to the training set and augmented "
-            "noisy signals are included in the evaluation breakdown."
+            "(optional). 80%% of these signals are added to training; "
+            "the remaining 20%% are held out for evaluation."
         ),
     )
     parser.add_argument(
@@ -1285,7 +1369,6 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    # Resolve the final record list
     records = AFDB_ALL_RECORDS if args.use_all_records else args.records
 
     results_dir = os.path.abspath(args.results_dir)
